@@ -3,7 +3,7 @@ import AuthScreen from "./components/AuthScreen";
 import QrScannerModal from "./components/QrScannerModal";
 import VisitorManagementModal from "./components/VisitorManagementModal";
 import { playNormalAlertSound, registerNotificationServiceWorker, sendToServiceWorker, showSystemNotification, startEmergencySound, stopEmergencySound, vibrateDevice, vibrateEmergency } from "./services/notificationService";
-import { deleteApprovedUserRemote, deleteConversationRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers } from "./services/firebaseData";
+import { deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, savePendingUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers, saveConversation, subscribeReports, saveReport, deleteReportRemote, subscribeAlerts, saveAlert, subscribeVisitors, saveVisitor, updateVisitorRemote, subscribeAttendance, saveAttendance, subscribeTasks, saveTask, updateTaskRemote, deleteTaskRemote, subscribeShifts, saveShift, updateShiftRemote, subscribeViolations, saveViolation, updateViolationRemote, subscribeSOSEvents, saveSOSEvent, updateSOSEventRemote } from "./services/firebaseData";
 import { exportReportsPDF, exportShiftReportPDF, exportFullDashboardPDF } from "./services/pdfService";
 import { generateVisitorQR, generateBuildingQR } from "./services/qrService";
 import { analyzeData } from "./services/analyticsService";
@@ -237,6 +237,14 @@ export default function App() {
   const [remoteApprovedUsers, setRemoteApprovedUsers] = useState<User[]>([]);
   const [remotePendingUsers, setRemotePendingUsers] = useState<User[]>([]);
   const [remoteConversations, setRemoteConversations] = useState<Conversation[]>([]);
+  const [remoteReports, setRemoteReports] = useState<Report[]>([]);
+  const [remoteAlerts, setRemoteAlerts] = useState<AlertLog[]>([]);
+  const [remoteVisitors, setRemoteVisitors] = useState<VisitorRecord[]>([]);
+  const [remoteAttendance, setRemoteAttendance] = useState<AttendanceRecord[]>([]);
+  const [remoteTasks, setRemoteTasks] = useState<Task[]>([]);
+  const [remoteShifts, setRemoteShifts] = useState<Shift[]>([]);
+  const [remoteViolations, setRemoteViolations] = useState<Violation[]>([]);
+  const [remoteSOSEvents, setRemoteSOSEvents] = useState<SOSEvent[]>([]);
   const [notificationPermission, setNotificationPermission] = useState("default");
   const [visitorModalOpen, setVisitorModalOpen] = useState(false);
   const [qrModalOpen, setQrModalOpen] = useState(false);
@@ -267,7 +275,7 @@ export default function App() {
   const recorderChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const toastTimer = useRef<number | null>(null);
-  const prevAlertCount = useRef(snapshot.alerts.length);
+  const prevAlertCount = useRef(0);
   const initialAlerts = useRef(true);
 
   // ─── Derived state ───────────────────────────────────────────────────────────
@@ -298,12 +306,69 @@ export default function App() {
     return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "attendance", "tasks", "chat", "analytics", "audit", "shifts", "violations", "map", "sos", "system", "settings"];
   }, [isAdmin, isGuard]);
 
-  const visibleReports = useMemo(() => isGuard && currentUser ? snapshot.reports.filter(r => r.senderId === currentUser.id) : snapshot.reports, [currentUser, isGuard, snapshot.reports]);
+  // ─── Merge remote + local for ALL collections ─────────────────────────────
+  const mergedReports = useMemo(() => {
+    const map = new Map<string, Report>();
+    snapshot.reports.forEach(r => map.set(r.id, r));
+    remoteReports.forEach(r => map.set(r.id, r));
+    return Array.from(map.values()).sort((a, b) => b.time.localeCompare(a.time));
+  }, [snapshot.reports, remoteReports]);
+
+  const mergedAlerts = useMemo(() => {
+    const map = new Map<string, AlertLog>();
+    snapshot.alerts.forEach(a => map.set(a.id, a));
+    remoteAlerts.forEach(a => map.set(a.id, a));
+    return Array.from(map.values()).sort((a, b) => b.time.localeCompare(a.time));
+  }, [snapshot.alerts, remoteAlerts]);
+
+  const mergedVisitors = useMemo(() => {
+    const map = new Map<string, VisitorRecord>();
+    snapshot.visitors.forEach(v => map.set(v.id, v));
+    remoteVisitors.forEach(v => map.set(v.id, v));
+    return Array.from(map.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }, [snapshot.visitors, remoteVisitors]);
+
+  const mergedAttendance = useMemo(() => {
+    const map = new Map<string, AttendanceRecord>();
+    snapshot.attendance.forEach(a => map.set(a.id, a));
+    remoteAttendance.forEach(a => map.set(a.id, a));
+    return Array.from(map.values()).sort((a, b) => b.time.localeCompare(a.time));
+  }, [snapshot.attendance, remoteAttendance]);
+
+  const mergedTasks = useMemo(() => {
+    const map = new Map<string, Task>();
+    snapshot.tasks.forEach(t => map.set(t.id, t));
+    remoteTasks.forEach(t => map.set(t.id, t));
+    return Array.from(map.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }, [snapshot.tasks, remoteTasks]);
+
+  const mergedShifts = useMemo(() => {
+    const map = new Map<string, Shift>();
+    snapshot.shifts.forEach(s => map.set(s.id, s));
+    remoteShifts.forEach(s => map.set(s.id, s));
+    return Array.from(map.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }, [snapshot.shifts, remoteShifts]);
+
+  const mergedViolations = useMemo(() => {
+    const map = new Map<string, Violation>();
+    snapshot.violations.forEach(v => map.set(v.id, v));
+    remoteViolations.forEach(v => map.set(v.id, v));
+    return Array.from(map.values()).sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
+  }, [snapshot.violations, remoteViolations]);
+
+  const mergedSOSEvents = useMemo(() => {
+    const map = new Map<string, SOSEvent>();
+    snapshot.sosEvents.forEach(s => map.set(s.id, s));
+    remoteSOSEvents.forEach(s => map.set(s.id, s));
+    return Array.from(map.values()).sort((a, b) => b.time.localeCompare(a.time));
+  }, [snapshot.sosEvents, remoteSOSEvents]);
+
+  const visibleReports = useMemo(() => isGuard && currentUser ? mergedReports.filter(r => r.senderId === currentUser.id) : mergedReports, [currentUser, isGuard, mergedReports]);
   const pagedReports = useMemo(() => visibleReports.slice((reportPage - 1) * REPORTS_PER_PAGE, reportPage * REPORTS_PER_PAGE), [reportPage, visibleReports]);
   const filteredUsers = useMemo(() => { const q = userFilter.trim().toLowerCase(); return q ? approvedUsers.filter(u => `${u.name} ${u.email}`.toLowerCase().includes(q)) : approvedUsers; }, [approvedUsers, userFilter]);
   const filteredVisitors = useMemo(() => {
     const q = visitorSearch.trim().toLowerCase();
-    return snapshot.visitors.filter(v => visitorStatusFilter === "all" || v.status === visitorStatusFilter).filter(v => !q || `${v.guestName} ${v.company} ${v.identityNumber ?? ""}`.toLowerCase().includes(q));
+    return mergedVisitors.filter(v => visitorStatusFilter === "all" || v.status === visitorStatusFilter).filter(v => !q || `${v.guestName} ${v.company} ${v.identityNumber ?? ""}`.toLowerCase().includes(q));
   }, [snapshot.visitors, visitorSearch, visitorStatusFilter]);
 
   const conversationsSource = useMemo(() => {
@@ -327,11 +392,11 @@ export default function App() {
   }, [approvedUsers, conversationsSource, currentUser]);
 
   const activeConversation = useMemo(() => visibleConversations.find(c => c.id === conversationId) ?? visibleConversations[0], [conversationId, visibleConversations]);
-  const visibleTasks = useMemo(() => isGuard && currentUser ? snapshot.tasks.filter(t => t.assignedTo === currentUser.id) : snapshot.tasks, [currentUser, isGuard, snapshot.tasks]);
+  const visibleTasks = useMemo(() => isGuard && currentUser ? mergedTasks.filter(t => t.assignedTo === currentUser.id) : snapshot.tasks, [currentUser, isGuard, snapshot.tasks]);
 
-  const todayShifts = useMemo(() => shiftFilter === "today" ? snapshot.shifts.filter(s => s.date === today()) : snapshot.shifts, [snapshot.shifts, shiftFilter]);
-  const myShift = useMemo(() => isGuard && currentUser ? snapshot.shifts.find(s => s.guardId === currentUser.id && s.date === today()) : null, [currentUser, isGuard, snapshot.shifts]);
-  const insights = useMemo(() => analyzeData(snapshot.reports, snapshot.shifts, snapshot.violations, snapshot.sosEvents, snapshot.attendance, snapshot.buildings), [snapshot]);
+  const todayShifts = useMemo(() => shiftFilter === "today" ? mergedShifts.filter(s => s.date === today()) : mergedShifts, [mergedShifts, shiftFilter]);
+  const myShift = useMemo(() => isGuard && currentUser ? mergedShifts.find(s => s.guardId === currentUser.id && s.date === today()) : null, [currentUser, isGuard, mergedShifts]);
+  const insights = useMemo(() => analyzeData(mergedReports, mergedShifts, mergedViolations, mergedSOSEvents, mergedAttendance, snapshot.buildings), [mergedReports, mergedShifts, mergedViolations, mergedSOSEvents, mergedAttendance, snapshot.buildings]);
 
   // ─── Effects ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -353,14 +418,30 @@ export default function App() {
     if ("Notification" in window) setNotificationPermission(Notification.permission);
     void registerNotificationServiceWorker();
     void ensureRemoteSeed(snapshot.users.filter(u => u.status === "approved"), snapshot.conversations);
+
     const unsubApproved = subscribeApprovedUsers(setRemoteApprovedUsers);
     const unsubPending = subscribePendingUsers(setRemotePendingUsers);
     const unsubConversations = subscribeConversations(setRemoteConversations);
+    const unsubReports = subscribeReports(setRemoteReports);
+    const unsubAlerts = subscribeAlerts(setRemoteAlerts);
+    const unsubVisitors = subscribeVisitors(setRemoteVisitors);
+    const unsubAttendance = subscribeAttendance(setRemoteAttendance);
+    const unsubTasks = subscribeTasks(setRemoteTasks);
+    const unsubShifts = subscribeShifts(setRemoteShifts);
+    const unsubViolations = subscribeViolations(setRemoteViolations);
+    const unsubSOS = subscribeSOSEvents(setRemoteSOSEvents);
+
     const goOnline = () => setIsOnline(true);
     const goOffline = () => setIsOnline(false);
     window.addEventListener("online", goOnline);
     window.addEventListener("offline", goOffline);
-    return () => { unsubApproved(); unsubPending(); unsubConversations(); window.removeEventListener("online", goOnline); window.removeEventListener("offline", goOffline); };
+    return () => {
+      unsubApproved(); unsubPending(); unsubConversations();
+      unsubReports(); unsubAlerts(); unsubVisitors(); unsubAttendance();
+      unsubTasks(); unsubShifts(); unsubViolations(); unsubSOS();
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
   }, []);
 
   useEffect(() => {
@@ -371,14 +452,14 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser) return;
-    if (initialAlerts.current) { initialAlerts.current = false; prevAlertCount.current = snapshot.alerts.length; return; }
-    if (snapshot.alerts.length > prevAlertCount.current) {
-      const latest = snapshot.alerts[0];
+    if (initialAlerts.current) { initialAlerts.current = false; prevAlertCount.current = mergedAlerts.length; return; }
+    if (mergedAlerts.length > prevAlertCount.current) {
+      const latest = mergedAlerts[0];
       const isCritical = latest.severity === "critical";
       if (isCritical) { startEmergencySound(); setEmergencyActive(true); vibrateEmergency(); } else { playNormalAlertSound(currentUser.soundEnabled); vibrateDevice(); }
     }
-    prevAlertCount.current = snapshot.alerts.length;
-  }, [currentUser, snapshot.alerts]);
+    prevAlertCount.current = mergedAlerts.length;
+  }, [currentUser, mergedAlerts]);
 
   useEffect(() => { const allowedTabIds = visibleTabs as string[]; if (!allowedTabIds.includes(activeTab)) setActiveTab(isGuard ? "reports" : "dashboard"); }, [activeTab, isGuard, visibleTabs]);
   useEffect(() => { if (!visibleConversations.length) return; if (!visibleConversations.find(c => c.id === conversationId)) setConversationId(visibleConversations[0].id); }, [conversationId, visibleConversations]);
@@ -438,17 +519,17 @@ export default function App() {
       id: `sos-${Date.now()}`, guardId: currentUser.id, guardName: currentUser.name,
       buildingId: currentUser.assignedBuildingId, lat, lng, address, time: nowStamp(), resolved: false,
     };
-    mutate(prev => ({
-      ...prev, sosEvents: [sos, ...prev.sosEvents],
-      alerts: [{ id: `sos-alert-${Date.now()}`, status: "🚨 SOS EMERGENCY", target: "Everyone", text: `SOS من ${currentUser.name} — ${address}`, sender: currentUser.name, time: nowStamp(), severity: "critical" }, ...prev.alerts],
-      auditLog: [createAuditEntry(currentUser, "sos_trigger", currentUser.name, `SOS activated at ${address}`, "critical"), ...prev.auditLog],
-    }), language === "ar" ? "🚨 تم إرسال نداء الاستغاثة!" : "🚨 SOS Alert Sent!");
+    const sosAlert: AlertLog = { id: `sos-alert-${Date.now()}`, status: "🚨 SOS EMERGENCY", target: "Everyone", text: `SOS من ${currentUser.name} — ${address}`, sender: currentUser.name, time: nowStamp(), severity: "critical" };
+    mutate(prev => ({ ...prev, sosEvents: [sos, ...prev.sosEvents], alerts: [sosAlert, ...prev.alerts], auditLog: [createAuditEntry(currentUser, "sos_trigger", currentUser.name, `SOS activated at ${address}`, "critical"), ...prev.auditLog] }), language === "ar" ? "🚨 تم إرسال نداء الاستغاثة!" : "🚨 SOS Alert Sent!");
+    void saveSOSEvent(sos);
+    void saveAlert(sosAlert);
     sendToServiceWorker({ title: `🚨 SOS: ${currentUser.name}`, body: `Emergency at ${address}`, tag: sos.id, requireInteraction: true });
   }, [currentUser, language, mutate]);
 
   const resolveSOS = (id: string) => {
     if (!currentUser) return;
     mutate(prev => ({ ...prev, sosEvents: prev.sosEvents.map(s => s.id === id ? { ...s, resolved: true, resolvedAt: nowStamp(), resolvedBy: currentUser.name } : s) }), language === "ar" ? "تم إغلاق حادثة SOS" : "SOS resolved");
+    void updateSOSEventRemote(id, { resolved: true, resolvedAt: nowStamp(), resolvedBy: currentUser?.name });
     stopEmergencySound(); setEmergencyActive(false); setSosActive(false);
   };
 
@@ -458,6 +539,7 @@ export default function App() {
     if (!currentUser || !reportForm.text.trim()) return;
     const report: Report = { id: `r-${Date.now()}`, buildingId: reportForm.buildingId, text: reportForm.text.trim(), senderId: currentUser.id, senderName: currentUser.name, senderEmail: currentUser.email, senderPhone: currentUser.phone, time: nowStamp(), status: reportForm.status, mediaUrl: reportForm.mediaUrl || undefined, mediaKind: reportForm.mediaKind || undefined, fileName: reportForm.fileName || undefined };
     mutate(prev => ({ ...prev, reports: [report, ...prev.reports] }), language === "ar" ? "تم حفظ التقرير" : "Report saved");
+    void saveReport(report);
     pushSync("report");
     setReportForm(prev => ({ ...prev, text: "", status: "normal", mediaUrl: "", mediaKind: "", fileName: "" }));
   };
@@ -470,12 +552,15 @@ export default function App() {
     if (!guard) return;
     const shift: Shift = { id: `s-${Date.now()}`, guardId: shiftForm.guardId, guardName: guard.name, buildingId: shiftForm.buildingId, date: shiftForm.date, startTime: shiftForm.startTime, endTime: shiftForm.endTime, status: "scheduled", createdAt: nowStamp() };
     mutate(prev => ({ ...prev, shifts: [shift, ...prev.shifts] }), language === "ar" ? "تمت إضافة النوبة" : "Shift added");
+    void saveShift(shift);
     setShiftForm({ guardId: "", buildingId: "", date: today(), startTime: "07:00", endTime: "19:00" });
   };
 
   const endShift = (shiftId: string) => {
     if (!currentUser) return;
-    mutate(prev => ({ ...prev, shifts: prev.shifts.map(s => s.id === shiftId ? { ...s, status: "completed", checkOutTime: nowStamp(), endOfShiftReport: endShiftNote || "النوبة انتهت بشكل طبيعي." } : s) }), language === "ar" ? "تم إنهاء النوبة" : "Shift ended");
+    const updates = { status: "completed" as const, checkOutTime: nowStamp(), endOfShiftReport: endShiftNote || "النوبة انتهت بشكل طبيعي." };
+    mutate(prev => ({ ...prev, shifts: prev.shifts.map(s => s.id === shiftId ? { ...s, ...updates } : s) }), language === "ar" ? "تم إنهاء النوبة" : "Shift ended");
+    void updateShiftRemote(shiftId, updates);
     const shift = snapshot.shifts.find(s => s.id === shiftId);
     if (shift) { try { exportShiftReportPDF({ ...shift, status: "completed", checkOutTime: nowStamp(), endOfShiftReport: endShiftNote }, currentUser.name, APP_NAME); } catch { /* ignore */ } }
     setEndShiftNote(""); setSelectedShiftId(null);
@@ -501,7 +586,11 @@ export default function App() {
     if (!currentUser || (!isOwner && !isAdmin)) return;
     const visitor: VisitorRecord = { id: `v-${Date.now()}`, guestName: payload.guestName.trim(), company: payload.company.trim(), purpose: payload.purpose.trim(), identityNumber: payload.identityNumber?.trim() ?? "", buildingId: payload.buildingId, arrivalDate: payload.arrivalDate, arrivalTime: payload.arrivalTime, createdBy: currentUser.name, createdAt: nowStamp(), passCode: generatePassCode(), status: "scheduled", reminderSent: false, preNotified: true, notes: payload.notes };
     const qrData = await generateVisitorQR(visitor.passCode, visitor.guestName).catch(() => "");
-    mutate(prev => ({ ...prev, visitors: [{ ...visitor, qrData }, ...prev.visitors], alerts: [{ id: `va-${Date.now()}`, status: language === "ar" ? "إشعار زائر" : "Visitor Notice", target: language === "ar" ? "جميع الحراس" : "All Guards", text: `${visitor.guestName} - ${visitor.company} - ${visitor.arrivalDate} ${visitor.arrivalTime}`, sender: currentUser.name, time: nowStamp(), severity: "info" }, ...prev.alerts] }), language === "ar" ? "تمت إضافة الزائر" : "Visitor added");
+    const fullVisitor = { ...visitor, qrData };
+    const visitorAlert: AlertLog = { id: `va-${Date.now()}`, status: language === "ar" ? "إشعار زائر" : "Visitor Notice", target: language === "ar" ? "جميع الحراس" : "All Guards", text: `${visitor.guestName} - ${visitor.company} - ${visitor.arrivalDate} ${visitor.arrivalTime}`, sender: currentUser.name, time: nowStamp(), severity: "info" };
+    mutate(prev => ({ ...prev, visitors: [fullVisitor, ...prev.visitors], alerts: [visitorAlert, ...prev.alerts] }), language === "ar" ? "تمت إضافة الزائر" : "Visitor added");
+    void saveVisitor(fullVisitor);
+    void saveAlert(visitorAlert);
     setVisitorModalOpen(false);
   };
 
@@ -510,6 +599,7 @@ export default function App() {
     if (!currentUser) return;
     const record: AttendanceRecord = { id: `at-${Date.now()}`, userId: currentUser.id, userName: currentUser.name, buildingId: currentUser.assignedBuildingId ?? snapshot.buildings[0]?.id ?? "", method: "manual", time: nowStamp() };
     mutate(prev => ({ ...prev, attendance: [record, ...prev.attendance] }), language === "ar" ? "تم تسجيل الحضور" : "Checked in");
+    void saveAttendance(record);
     pushSync("attendance");
   };
 
@@ -528,7 +618,8 @@ export default function App() {
   const approveUser = (userId: string) => {
     if (!currentUser) return;
     mutate(prev => ({ ...prev, users: prev.users.map(u => u.id === userId ? { ...u, status: "approved" } : u), auditLog: [createAuditEntry(currentUser, "approve_user", userId, "تمت الموافقة على المستخدم", "info"), ...prev.auditLog] }), language === "ar" ? "تمت الموافقة" : "Approved");
-    void saveApprovedUser(snapshot.users.find(u => u.id === userId)!);
+    const approvedUser = snapshot.users.find(u => u.id === userId);
+    if (approvedUser) void saveApprovedUser({ ...approvedUser, status: "approved" });
     void deletePendingUserRemote(userId);
   };
 
@@ -560,9 +651,10 @@ export default function App() {
         if (currentUser.assignedBuildingId && currentUser.assignedBuildingId !== data.buildingId) { showToast(language === "ar" ? "⚠️ هذا المبنى غير مخصص لك" : "⚠️ Building mismatch", "danger"); return; }
         const record: AttendanceRecord = { id: `at-${Date.now()}`, userId: currentUser.id, userName: currentUser.name, buildingId: data.buildingId, method: "qr", time: nowStamp() };
         mutate(prev => ({ ...prev, attendance: [record, ...prev.attendance] }), language === "ar" ? `تم تسجيل الحضور في ${building.nameAr}` : `Checked in at ${building.nameEn}`);
+        void saveAttendance(record);
       } else if (data.type === "visitor") {
         const visitor = snapshot.visitors.find(v => v.passCode === data.passCode);
-        if (visitor) mutate(prev => ({ ...prev, visitors: prev.visitors.map(v => v.id === visitor.id ? { ...v, status: "arrived", checkInTime: nowStamp() } : v) }), language === "ar" ? `✅ تم استقبال ${visitor.guestName}` : `✅ ${visitor.guestName} checked in`);
+        if (visitor) { mutate(prev => ({ ...prev, visitors: prev.visitors.map(v => v.id === visitor.id ? { ...v, status: "arrived", checkInTime: nowStamp() } : v) }), language === "ar" ? `✅ تم استقبال ${visitor.guestName}` : `✅ ${visitor.guestName} checked in`); void updateVisitorRemote(visitor.id, { status: "arrived", checkInTime: nowStamp() }); }
       }
     } catch { showToast(language === "ar" ? "رمز غير معروف" : "Unknown QR", "danger"); }
     setQrContext(null);
@@ -584,20 +676,20 @@ export default function App() {
       )}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label={language === "ar" ? "إجمالي الحراس" : "Total Guards"} value={guardUsers.length} />
-        <StatCard label={language === "ar" ? "التقارير الحرجة" : "Critical Reports"} value={snapshot.reports.filter(r => r.status === "critical").length} color="text-red-300" />
-        <StatCard label={language === "ar" ? "أحداث SOS" : "SOS Events"} value={snapshot.sosEvents.filter(s => !s.resolved).length} color="text-red-400" />
-        <StatCard label={language === "ar" ? "زوار اليوم" : "Today Visitors"} value={snapshot.visitors.filter(v => v.arrivalDate === today()).length} color="text-amber-300" />
+        <StatCard label={language === "ar" ? "التقارير الحرجة" : "Critical Reports"} value={mergedReports.filter(r => r.status === "critical").length} color="text-red-300" />
+        <StatCard label={language === "ar" ? "أحداث SOS" : "SOS Events"} value={mergedSOSEvents.filter(s => !s.resolved).length} color="text-red-400" />
+        <StatCard label={language === "ar" ? "زوار اليوم" : "Today Visitors"} value={mergedVisitors.filter(v => v.arrivalDate === today()).length} color="text-amber-300" />
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label={language === "ar" ? "نوبات اليوم" : "Today Shifts"} value={snapshot.shifts.filter(s => s.date === today()).length} />
-        <StatCard label={language === "ar" ? "مخالفات مفتوحة" : "Open Violations"} value={snapshot.violations.filter(v => !v.acknowledged).length} color="text-amber-300" />
-        <StatCard label={language === "ar" ? "تقارير تحذير" : "Warning Reports"} value={snapshot.reports.filter(r => r.status === "warning").length} color="text-amber-300" />
-        <StatCard label={language === "ar" ? "إجمالي التقارير" : "Total Reports"} value={snapshot.reports.length} />
+        <StatCard label={language === "ar" ? "نوبات اليوم" : "Today Shifts"} value={mergedShifts.filter(s => s.date === today()).length} />
+        <StatCard label={language === "ar" ? "مخالفات مفتوحة" : "Open Violations"} value={mergedViolations.filter(v => !v.acknowledged).length} color="text-amber-300" />
+        <StatCard label={language === "ar" ? "تقارير تحذير" : "Warning Reports"} value={mergedReports.filter(r => r.status === "warning").length} color="text-amber-300" />
+        <StatCard label={language === "ar" ? "إجمالي التقارير" : "Total Reports"} value={mergedReports.length} />
       </div>
       <div className="grid gap-6 lg:grid-cols-2">
         <Panel>
           <div className="mb-3 font-black text-white">{language === "ar" ? "آخر التقارير" : "Latest Reports"}</div>
-          {snapshot.reports.slice(0, 4).map(r => (
+          {mergedReports.slice(0, 4).map(r => (
             <div key={r.id} className="mb-2 flex items-start gap-3 rounded-xl bg-white/5 p-3">
               <Badge className={getStatusBadgeClass(r.status)}>{r.status}</Badge>
               <div><div className="text-sm font-bold text-white">{r.senderName}</div><div className="text-xs text-slate-400">{r.text.slice(0, 60)}…</div></div>
@@ -606,7 +698,7 @@ export default function App() {
         </Panel>
         <Panel>
           <div className="mb-3 font-black text-white">{language === "ar" ? "آخر أحداث SOS" : "Latest SOS"}</div>
-          {snapshot.sosEvents.length === 0 ? <EmptyMsg title={language === "ar" ? "لا أحداث" : "No SOS"} text={language === "ar" ? "لم يُبلَّغ عن أي حوادث" : "No SOS events reported"} /> : snapshot.sosEvents.slice(0, 4).map(s => (
+          {mergedSOSEvents.length === 0 ? <EmptyMsg title={language === "ar" ? "لا أحداث" : "No SOS"} text={language === "ar" ? "لم يُبلَّغ عن أي حوادث" : "No SOS events reported"} /> : mergedSOSEvents.slice(0, 4).map(s => (
             <div key={s.id} className={`mb-2 rounded-xl p-3 ${s.resolved ? "bg-emerald-500/10" : "bg-red-500/10"}`}>
               <div className="flex items-center justify-between">
                 <span className="font-bold text-white">{s.guardName}</span>
@@ -645,9 +737,9 @@ export default function App() {
         <div className="mb-4 flex items-center justify-between">
           <div className="font-black text-white">{language === "ar" ? "سجل أحداث SOS" : "SOS Event Log"}</div>
         </div>
-        {snapshot.sosEvents.length === 0 ? <EmptyMsg title={language === "ar" ? "لا أحداث" : "No Events"} text={language === "ar" ? "لم يُسجَّل أي حدث SOS" : "No SOS events recorded"} /> : (
+        {mergedSOSEvents.length === 0 ? <EmptyMsg title={language === "ar" ? "لا أحداث" : "No Events"} text={language === "ar" ? "لم يُسجَّل أي حدث SOS" : "No SOS events recorded"} /> : (
           <div className="space-y-3">
-            {snapshot.sosEvents.map(s => (
+            {mergedSOSEvents.map(s => (
               <div key={s.id} className={`rounded-2xl border p-4 ${s.resolved ? "border-emerald-500/20 bg-emerald-500/5" : "border-red-500/30 bg-red-500/10"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -785,9 +877,9 @@ export default function App() {
       )}
       <Panel>
         <div className="mb-4 font-black text-white">{language === "ar" ? "سجل المخالفات" : "Violations Log"}</div>
-        {snapshot.violations.length === 0 ? <EmptyMsg title={language === "ar" ? "لا مخالفات" : "No Violations"} text={language === "ar" ? "لم تُسجَّل أي مخالفات" : "No violations recorded"} /> : (
+        {mergedViolations.length === 0 ? <EmptyMsg title={language === "ar" ? "لا مخالفات" : "No Violations"} text={language === "ar" ? "لم تُسجَّل أي مخالفات" : "No violations recorded"} /> : (
           <div className="space-y-3">
-            {snapshot.violations.map(v => (
+            {mergedViolations.map(v => (
               <div key={v.id} className={`rounded-2xl border p-4 ${v.severity === "critical" ? "border-red-500/30 bg-red-500/5" : v.severity === "major" ? "border-amber-500/30 bg-amber-500/5" : "border-slate-500/20 bg-white/5"}`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
@@ -798,7 +890,7 @@ export default function App() {
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <Badge className={v.severity === "critical" ? "border-red-400/30 bg-red-500/15 text-red-300" : v.severity === "major" ? "border-amber-400/30 bg-amber-500/15 text-amber-300" : "border-slate-400/30 bg-slate-500/15 text-slate-300"}>{v.severity}</Badge>
-                    {!v.acknowledged && <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => mutate(prev => ({ ...prev, violations: prev.violations.map(x => x.id === v.id ? { ...x, acknowledged: true, acknowledgedAt: nowStamp() } : x) }), language === "ar" ? "تم الإقرار" : "Acknowledged")}>{language === "ar" ? "إقرار" : "Acknowledge"}</Btn>}
+                    {!v.acknowledged && <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => { mutate(prev => ({ ...prev, violations: prev.violations.map(x => x.id === v.id ? { ...x, acknowledged: true, acknowledgedAt: nowStamp() } : x) }), language === "ar" ? "تم الإقرار" : "Acknowledged"); void updateViolationRemote(v.id, { acknowledged: true, acknowledgedAt: nowStamp() }); }}>{language === "ar" ? "إقرار" : "Acknowledge"}</Btn>}
                   </div>
                 </div>
               </div>
@@ -855,11 +947,11 @@ export default function App() {
       </Panel>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Panel><div className="mb-2 text-sm text-slate-400">{language === "ar" ? "تقارير طبيعية" : "Normal Reports"}</div><div className="text-4xl font-black text-emerald-400">{snapshot.reports.filter(r => r.status === "normal").length}</div></Panel>
-        <Panel><div className="mb-2 text-sm text-slate-400">{language === "ar" ? "تقارير تحذير" : "Warning Reports"}</div><div className="text-4xl font-black text-amber-400">{snapshot.reports.filter(r => r.status === "warning").length}</div></Panel>
-        <Panel><div className="mb-2 text-sm text-slate-400">{language === "ar" ? "تقارير حرجة" : "Critical Reports"}</div><div className="text-4xl font-black text-red-400">{snapshot.reports.filter(r => r.status === "critical").length}</div></Panel>
-        <Panel><div className="mb-2 text-sm text-slate-400">{language === "ar" ? "نوبات مكتملة" : "Completed Shifts"}</div><div className="text-4xl font-black text-sky-400">{snapshot.shifts.filter(s => s.status === "completed").length}</div></Panel>
-        <Panel><div className="mb-2 text-sm text-slate-400">{language === "ar" ? "مجموع المخالفات" : "Total Violations"}</div><div className="text-4xl font-black text-amber-400">{snapshot.violations.length}</div></Panel>
-        <Panel><div className="mb-2 text-sm text-slate-400">{language === "ar" ? "زوار وصلوا" : "Arrived Visitors"}</div><div className="text-4xl font-black text-emerald-400">{snapshot.visitors.filter(v => v.status === "arrived").length}</div></Panel>
+        <Panel><div className="mb-2 text-sm text-slate-400">{language === "ar" ? "تقارير تحذير" : "Warning Reports"}</div><div className="text-4xl font-black text-amber-400">{mergedReports.filter(r => r.status === "warning").length}</div></Panel>
+        <Panel><div className="mb-2 text-sm text-slate-400">{language === "ar" ? "تقارير حرجة" : "Critical Reports"}</div><div className="text-4xl font-black text-red-400">{mergedReports.filter(r => r.status === "critical").length}</div></Panel>
+        <Panel><div className="mb-2 text-sm text-slate-400">{language === "ar" ? "نوبات مكتملة" : "Completed Shifts"}</div><div className="text-4xl font-black text-sky-400">{mergedShifts.filter(s => s.status === "completed").length}</div></Panel>
+        <Panel><div className="mb-2 text-sm text-slate-400">{language === "ar" ? "مجموع المخالفات" : "Total Violations"}</div><div className="text-4xl font-black text-amber-400">{mergedViolations.length}</div></Panel>
+        <Panel><div className="mb-2 text-sm text-slate-400">{language === "ar" ? "زوار وصلوا" : "Arrived Visitors"}</div><div className="text-4xl font-black text-emerald-400">{mergedVisitors.filter(v => v.status === "arrived").length}</div></Panel>
       </div>
       <Btn variant="secondary" onClick={() => { try { exportFullDashboardPDF(snapshot, APP_NAME); showToast(language === "ar" ? "تم تصدير PDF" : "PDF exported"); } catch { showToast("PDF failed", "danger"); } }}>📄 {language === "ar" ? "تصدير تقرير شامل PDF" : "Export Full Report PDF"}</Btn>
     </div>
@@ -903,7 +995,7 @@ export default function App() {
                 </div>
                 <p className="mt-2 text-sm text-slate-300">{r.text}</p>
               </div>
-              {(isOwner || isAdmin) && <Btn variant="danger" className="h-8 px-3 text-xs" onClick={() => mutate(prev => ({ ...prev, reports: prev.reports.filter(x => x.id !== r.id) }), language === "ar" ? "تم الحذف" : "Deleted")}>{language === "ar" ? "حذف" : "Delete"}</Btn>}
+              {(isOwner || isAdmin) && <Btn variant="danger" className="h-8 px-3 text-xs" onClick={() => { mutate(prev => ({ ...prev, reports: prev.reports.filter(x => x.id !== r.id) }), language === "ar" ? "تم الحذف" : "Deleted"); void deleteReportRemote(r.id); }}>{language === "ar" ? "حذف" : "Delete"}</Btn>}
             </div>
           </Panel>
         ))}
@@ -953,9 +1045,9 @@ export default function App() {
               )}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              {v.status === "scheduled" && (isOwner || isAdmin) && <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => mutate(prev => ({ ...prev, visitors: prev.visitors.map(x => x.id === v.id ? { ...x, status: "arrived", checkInTime: nowStamp() } : x) }), language === "ar" ? "وصل الزائر" : "Visitor arrived")}>{language === "ar" ? "وصل" : "Arrived"}</Btn>}
-              {v.status === "arrived" && (isOwner || isAdmin) && <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => mutate(prev => ({ ...prev, visitors: prev.visitors.map(x => x.id === v.id ? { ...x, status: "departed", checkOutTime: nowStamp() } : x) }), language === "ar" ? "غادر الزائر" : "Visitor departed")}>{language === "ar" ? "غادر" : "Departed"}</Btn>}
-              {v.status === "scheduled" && (isOwner || isAdmin) && <Btn variant="danger" className="h-8 px-3 text-xs" onClick={() => mutate(prev => ({ ...prev, visitors: prev.visitors.map(x => x.id === v.id ? { ...x, status: "cancelled" } : x) }), language === "ar" ? "تم الإلغاء" : "Cancelled")}>{language === "ar" ? "إلغاء" : "Cancel"}</Btn>}
+              {v.status === "scheduled" && (isOwner || isAdmin) && <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => { mutate(prev => ({ ...prev, visitors: prev.visitors.map(x => x.id === v.id ? { ...x, status: "arrived", checkInTime: nowStamp() } : x) }), language === "ar" ? "وصل الزائر" : "Visitor arrived"); void updateVisitorRemote(v.id, { status: "arrived", checkInTime: nowStamp() }); }}>{language === "ar" ? "وصل" : "Arrived"}</Btn>}
+              {v.status === "arrived" && (isOwner || isAdmin) && <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => { mutate(prev => ({ ...prev, visitors: prev.visitors.map(x => x.id === v.id ? { ...x, status: "departed", checkOutTime: nowStamp() } : x) }), language === "ar" ? "غادر الزائر" : "Visitor departed"); void updateVisitorRemote(v.id, { status: "departed", checkOutTime: nowStamp() }); }}>{language === "ar" ? "غادر" : "Departed"}</Btn>}
+              {v.status === "scheduled" && (isOwner || isAdmin) && <Btn variant="danger" className="h-8 px-3 text-xs" onClick={() => { mutate(prev => ({ ...prev, visitors: prev.visitors.map(x => x.id === v.id ? { ...x, status: "cancelled" } : x) }), language === "ar" ? "تم الإلغاء" : "Cancelled"); void updateVisitorRemote(v.id, { status: "cancelled" }); }}>{language === "ar" ? "إلغاء" : "Cancel"}</Btn>}
             </div>
           </Panel>
         ))}
@@ -1071,7 +1163,7 @@ export default function App() {
         </Panel>
       )}
       <div className="space-y-3">
-        {snapshot.alerts.length === 0 ? <EmptyMsg title={language === "ar" ? "لا تنبيهات" : "No Alerts"} text="" /> : snapshot.alerts.map(a => (
+        {mergedAlerts.length === 0 ? <EmptyMsg title={language === "ar" ? "لا تنبيهات" : "No Alerts"} text="" /> : mergedAlerts.map(a => (
           <Panel key={a.id}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -1096,7 +1188,7 @@ export default function App() {
         </div>
       </Panel>
       <div className="space-y-3">
-        {snapshot.attendance.slice(0, 20).map(a => (
+        {mergedAttendance.slice(0, 20).map(a => (
           <Panel key={a.id}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div><div className="font-black text-white">{a.userName}</div><div className="text-sm text-slate-400">{a.time} · {formatBuilding(snapshot.buildings.find(b => b.id === a.buildingId), language)}</div></div>
@@ -1180,7 +1272,7 @@ export default function App() {
               </div>
               <div className="flex items-center gap-2">
                 <Badge className={t.status === "done" ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : "border-amber-400/30 bg-amber-500/15 text-amber-300"}>{t.status}</Badge>
-                {t.status !== "done" && (isGuard || isOwner || isAdmin) && <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => mutate(prev => ({ ...prev, tasks: prev.tasks.map(x => x.id === t.id ? { ...x, status: "done" } : x) }), language === "ar" ? "تم الإنجاز" : "Done")}>{language === "ar" ? "إنجاز" : "Complete"}</Btn>}
+                {t.status !== "done" && (isGuard || isOwner || isAdmin) && <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => { mutate(prev => ({ ...prev, tasks: prev.tasks.map(x => x.id === t.id ? { ...x, status: "done" } : x) }), language === "ar" ? "تم الإنجاز" : "Done"); void updateTaskRemote(t.id, { status: "done" }); }}>{language === "ar" ? "إنجاز" : "Complete"}</Btn>}
               </div>
             </div>
           </Panel>
@@ -1274,7 +1366,7 @@ export default function App() {
 
   return (
     <div dir={language === "ar" ? "rtl" : "ltr"} className="min-h-screen bg-[#040818] text-white">
-      {snapshot.sosEvents.some(s => !s.resolved) && (
+      {mergedSOSEvents.some(s => !s.resolved) && (
         <div className="border-b border-red-500/50 bg-red-600 px-4 py-2 text-center text-sm font-black tracking-wide animate-pulse">
           🚨 {language === "ar" ? "تنبيه SOS نشط — تحقق من لوحة SOS" : "ACTIVE SOS ALERT — Check SOS Panel"}
         </div>
