@@ -1,190 +1,121 @@
 export type Language = "ar" | "en";
 export type Role = "owner" | "admin" | "guard";
-export type AccountStatus = "approved" | "pending";
-
-export type Tab =
-  | "dashboard"
-  | "reports"
-  | "alerts"
-  | "buildings"
-  | "users"
-  | "visitors"
-  | "attendance"
-  | "tasks"
-  | "chat"
-  | "analytics"
-  | "audit"
-  | "system"
-  | "settings";
-
-export type Pair = {
-  ar: string;
-  en: string;
-};
-
-export type Building = {
-  id: string;
-  nameAr: string;
-  nameEn: string;
-  area: string;
-  qrCode: string;
-};
-
-export type User = {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  role: Role;
-  status: AccountStatus;
-  assignedBuildingId?: string;
-  permissions: string[];
-  rating: number;
-  passwordHash: string;
-  soundEnabled: boolean;
-  desktopNotificationsEnabled: boolean;
-  showFullToAdmin?: boolean;
-  createdAt: string;
-};
-
 export type ReportStatus = "normal" | "warning" | "critical";
-
-export type Report = {
-  id: string;
-  buildingId: string;
-  text: string;
-  senderId: string;
-  senderName: string;
-  senderEmail: string;
-  senderPhone: string;
-  time: string;
-  status: ReportStatus;
-  mediaUrl?: string;
-  mediaKind?: "image" | "video";
-  fileName?: string;
-};
-
-export type AlertLog = {
-  id: string;
-  status: string;
-  target: string;
-  text: string;
-  sender: string;
-  time: string;
-  severity: "info" | "warning" | "critical";
-};
-
-export type AttendanceRecord = {
-  id: string;
-  userId: string;
-  userName: string;
-  buildingId: string;
-  method: "manual" | "qr";
-  time: string;
-};
-
-export type Task = {
-  id: string;
-  title: string;
-  details: string;
-  assignedTo: string;
-  assignedName: string;
-  status: "pending" | "done";
-  createdAt: string;
-};
-
-export type VisitorRecord = {
-  id: string;
-  guestName: string;
-  company: string;
-  purpose: string;
-  identityNumber?: string;
-  buildingId: string;
-  arrivalDate: string;
-  arrivalTime: string;
-  createdBy: string;
-  createdAt: string;
-  passCode: string;
-  status: "scheduled" | "arrived" | "expired";
-  reminderSent: boolean;
-  preNotified: boolean;
-};
-
-export type ChatMessage = {
-  id: string;
-  senderId: string;
-  kind: "text" | "image" | "video" | "audio";
-  text?: string;
-  mediaUrl?: string;
-  fileName?: string;
-  time: string;
-};
-
-export type Conversation = {
-  id: string;
-  participantId: string;
-  participantName: string;
-  participantRole: Role;
-  messages: ChatMessage[];
-};
-
+export type Tab = "dashboard" | "reports" | "alerts" | "buildings" | "users" | "visitors" |
+  "attendance" | "tasks" | "chat" | "analytics" | "audit" | "system" | "settings" |
+  "shifts" | "violations" | "map" | "sos";
+export type ToastTone = "success" | "danger" | "info";
 export type AuditSeverity = "info" | "warning" | "critical";
 
-export type AuditEntry = {
-  id: string;
-  actorId: string;
-  actorName: string;
-  action: string;
-  target: string;
-  details: string;
-  severity: AuditSeverity;
-  time: string;
-};
+export interface Pair { ar: string; en: string; }
 
-export type SystemSettings = {
-  emergencyContact: string;
-  welcomeAr: string;
-  welcomeEn: string;
-  criticalEmail: string;
-  criticalSms: string;
-  visitorReminderMinutes: number;
-};
+export interface User {
+  id: string; name: string; email: string; phone: string; role: Role;
+  status: "approved" | "pending"; permissions: string[];
+  assignedBuildingId?: string; rating: number; passwordHash: string;
+  soundEnabled: boolean; desktopNotificationsEnabled: boolean;
+  showFullToAdmin: boolean; createdAt: string; avatar?: string;
+  violations?: number; lastSeen?: string;
+}
 
-export type ToastTone = "success" | "danger" | "info";
+export interface Building {
+  id: string; nameAr: string; nameEn: string; area: string; qrCode: string;
+  lat?: number; lng?: number;
+}
 
-export type Toast = {
-  text: string;
-  tone: ToastTone;
-};
+export interface Report {
+  id: string; buildingId: string; text: string; senderId: string;
+  senderName: string; senderEmail: string; senderPhone: string;
+  time: string; status: ReportStatus; mediaUrl?: string;
+  mediaKind?: "image" | "video"; fileName?: string;
+}
 
-export type AppSnapshot = {
-  buildings: Building[];
-  users: User[];
-  reports: Report[];
-  alerts: AlertLog[];
-  attendance: AttendanceRecord[];
-  tasks: Task[];
-  visitors: VisitorRecord[];
-  conversations: Conversation[];
-  auditLog: AuditEntry[];
-  systemSettings: SystemSettings;
-};
+export interface AlertLog {
+  id: string; status: string; target: string; text: string;
+  sender: string; time: string; severity: "info" | "warning" | "critical";
+}
 
-export type NewAccountPayload = {
-  name: string;
-  email: string;
-  phone: string;
-  role: Exclude<Role, "owner">;
-  buildingId: string;
-  password: string;
-};
+export interface AttendanceRecord {
+  id: string; userId: string; userName: string; buildingId: string;
+  method: "manual" | "qr"; time: string; checkOut?: string;
+}
 
-export type VisitorFormPayload = {
-  guestName: string;
-  company: string;
-  purpose: string;
-  identityNumber?: string;
-  buildingId: string;
-  arrivalDate: string;
-  arrivalTime: string;
-};
+export interface Task {
+  id: string; title: string; details: string; assignedTo: string;
+  assignedName: string; status: "pending" | "in-progress" | "done";
+  createdAt: string; dueDate?: string; priority?: "low" | "medium" | "high";
+}
+
+export interface VisitorRecord {
+  id: string; guestName: string; company: string; purpose: string;
+  identityNumber?: string; buildingId: string; arrivalDate: string;
+  arrivalTime: string; createdBy: string; createdAt: string;
+  passCode: string; status: "scheduled" | "arrived" | "departed" | "cancelled";
+  reminderSent: boolean; preNotified: boolean; qrData?: string;
+  checkInTime?: string; checkOutTime?: string; notes?: string;
+}
+
+export interface ChatMessage {
+  id: string; senderId: string; kind: "text" | "audio" | "image";
+  text?: string; audioUrl?: string; imageUrl?: string; time: string;
+}
+
+export interface Conversation {
+  id: string; participantId: string; participantName: string;
+  participantRole: Role; messages: ChatMessage[]; lastSeen?: string;
+}
+
+export interface AuditEntry {
+  id: string; actorId: string; actorName: string; action: string;
+  target: string; details: string; severity: AuditSeverity; time: string;
+}
+
+export interface Shift {
+  id: string; guardId: string; guardName: string; buildingId: string;
+  date: string; startTime: string; endTime: string;
+  status: "scheduled" | "active" | "completed" | "missed";
+  checkInTime?: string; checkOutTime?: string;
+  endOfShiftReport?: string; createdAt: string;
+  overtimeMinutes?: number;
+}
+
+export interface Violation {
+  id: string; guardId: string; guardName: string; type: string;
+  description: string; severity: "minor" | "major" | "critical";
+  buildingId?: string; issuedBy: string; issuedAt: string;
+  acknowledged?: boolean; acknowledgedAt?: string; penalty?: string;
+}
+
+export interface SOSEvent {
+  id: string; guardId: string; guardName: string; buildingId?: string;
+  lat?: number; lng?: number; address?: string;
+  time: string; resolved: boolean; resolvedAt?: string;
+  resolvedBy?: string; notes?: string;
+}
+
+export interface SystemSettings {
+  emergencyContact: string; welcomeAr: string; welcomeEn: string;
+  criticalEmail: string; criticalSms: string;
+  visitorReminderMinutes: number; orgName?: string; orgLogo?: string;
+  shiftStartHour?: number; shiftEndHour?: number;
+}
+
+export interface AppSnapshot {
+  buildings: Building[]; users: User[]; reports: Report[];
+  alerts: AlertLog[]; attendance: AttendanceRecord[]; tasks: Task[];
+  visitors: VisitorRecord[]; conversations: Conversation[];
+  auditLog: AuditEntry[]; systemSettings: SystemSettings;
+  shifts: Shift[]; violations: Violation[]; sosEvents: SOSEvent[];
+}
+
+export interface Toast { text: string; tone: ToastTone; }
+export interface NewAccountPayload {
+  name: string; email: string; phone: string; password: string;
+  role: Role; buildingId: string;
+}
+export interface VisitorFormPayload {
+  guestName: string; company: string; purpose: string;
+  identityNumber?: string; buildingId: string;
+  arrivalDate: string; arrivalTime: string; notes?: string;
+}
+export type Report2 = Report;
