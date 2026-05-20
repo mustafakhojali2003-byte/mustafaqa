@@ -1,0 +1,16 @@
+{
+  "name": "MUSTAFA.QA Security Platform",
+  "short_name": "MUSTAFA.QA",
+  "description": "نظام إدارة الأمن المتكامل",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#040818",
+  "theme_color": "#040818",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ],
+  "categories": ["business", "security", "productivity"],
+  "lang": "ar",
+  "dir": "rtl"
+}
