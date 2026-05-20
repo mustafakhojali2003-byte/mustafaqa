@@ -398,8 +398,8 @@ export default function App() {
   const guardUsers = useMemo(() => approvedUsers.filter(u => u.role === "guard"), [approvedUsers]);
 
   const visibleTabs = useMemo((): Tab[] => {
-    if (isGuard) return ["reports", "alerts", "buildings", "visitors", "attendance", "tasks", "chat", "patrol", "shifts", "sos", "settings"];
-    if (isAdmin) return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "tasks", "chat", "shifts", "violations", "scores", "patrol", "settings"];
+    if (isGuard) return ["reports", "alerts", "buildings", "visitors", "attendance", "tasks", "chat", "patrol", "sos", "settings"];
+    if (isAdmin) return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "tasks", "chat", "violations", "scores", "patrol", "settings"];
     return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "attendance", "tasks", "chat", "analytics", "audit", "shifts", "violations", "sos", "system", "settings"];
   }, [isAdmin, isGuard]);
 
