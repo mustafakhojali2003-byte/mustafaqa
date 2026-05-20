@@ -280,6 +280,7 @@ export default function App() {
   const [selectedBuildingId, setSelectedBuildingId] = useState<string | null>(null);
   const [buildingSearch, setBuildingSearch] = useState("");
   const [qrModalBuilding, setQrModalBuilding] = useState<string | null>(null);
+  const [stoppedAlertIds, setStoppedAlertIds] = useState<Set<string>>(new Set());
   const [buildingQrImages, setBuildingQrImages] = useState<Record<string, string>>({});
   const [showAddBuilding, setShowAddBuilding] = useState(false);
   const [addBuildingForm, setAddBuildingForm] = useState({ nameAr: "", nameEn: "", area: "" });
@@ -2213,19 +2214,33 @@ export default function App() {
         </form>
       </Panel>
 
-      {/* Active critical banner */}
-      {mergedAlerts.some(a => a.severity === "critical") && (
-        <div className="rounded-2xl border border-red-500/50 bg-red-500/10 p-4 animate-pulse flex items-center gap-4">
-          <span className="text-3xl">🚨</span>
+      {/* Active critical banner + master stop */}
+      {(emergencyActive || mergedAlerts.some(a => a.severity === "critical" && !stoppedAlertIds.has(a.id))) && (
+        <div className="rounded-2xl border border-red-500/50 bg-red-600/20 p-4 flex flex-wrap items-center gap-3">
+          <span className="text-3xl animate-pulse">🚨</span>
           <div className="flex-1">
-            <div className="font-black text-red-300">{language === "ar" ? "إنذار طارئ نشط!" : "Active Emergency Alert!"}</div>
+            <div className="font-black text-red-200">{language === "ar" ? "صفارة الإنذار تعمل!" : "Siren Active!"}</div>
             <div className="text-sm text-red-400">{mergedAlerts.find(a => a.severity === "critical")?.status}</div>
           </div>
-          {emergencyActive && (
-            <Btn variant="danger" onClick={() => { stopEmergencySound(); setEmergencyActive(false); }}>
-              🔇 {language === "ar" ? "إيقاف الصفارة" : "Stop Siren"}
-            </Btn>
-          )}
+          <div className="flex flex-wrap gap-2">
+            {emergencyActive && (
+              <Btn variant="danger" onClick={() => { stopEmergencySound(); setEmergencyActive(false); }}>
+                🔇 {language === "ar" ? "إيقاف صفارتي" : "Stop My Siren"}
+              </Btn>
+            )}
+            {isOwner && (
+              <Btn variant="danger" onClick={() => {
+                stopEmergencySound();
+                setEmergencyActive(false);
+                // Mark all critical alerts as stopped
+                const critIds = new Set(mergedAlerts.filter(a => a.severity === "critical").map(a => a.id));
+                setStoppedAlertIds(prev => new Set([...prev, ...critIds]));
+                showToast(language === "ar" ? "🔇 تم إيقاف جميع الإنذارات" : "🔇 All alerts stopped", "info");
+              }}>
+                🔇 {language === "ar" ? "إيقاف الكل" : "Stop All"}
+              </Btn>
+            )}
+          </div>
         </div>
       )}
 
@@ -2238,7 +2253,7 @@ export default function App() {
             const isCrit = a.severity === "critical";
             const isWarn = a.severity === "warning";
             return (
-              <div key={a.id} className={`mb-3 rounded-2xl border p-4 ${isCrit ? "border-red-500/40 bg-red-500/10 " + (a === mergedAlerts[0] ? "animate-pulse" : "") : isWarn ? "border-amber-500/30 bg-amber-500/5" : "border-white/10 bg-white/5"}`}>
+              <div key={a.id} className={`mb-3 rounded-2xl border p-4 ${stoppedAlertIds.has(a.id) ? "border-slate-500/20 bg-slate-500/5 opacity-60" : isCrit ? "border-red-500/40 bg-red-500/10 " + (a === mergedAlerts[0] ? "animate-pulse" : "") : isWarn ? "border-amber-500/30 bg-amber-500/5" : "border-white/10 bg-white/5"}`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
                     <span className="text-2xl mt-0.5">{isCrit ? "🚨" : isWarn ? "⚠️" : "📢"}</span>
@@ -2252,9 +2267,19 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                  <Badge className={isCrit ? "border-red-400/30 bg-red-500/15 text-red-300" : isWarn ? "border-amber-400/30 bg-amber-500/15 text-amber-300" : "border-sky-400/30 bg-sky-500/15 text-sky-300"}>
-                    {isCrit ? (language === "ar" ? "حرج 🔥" : "Critical 🔥") : isWarn ? (language === "ar" ? "تحذير" : "Warning") : (language === "ar" ? "معلومة" : "Info")}
-                  </Badge>
+                  <div className="flex flex-col items-end gap-2">
+                    <Badge className={isCrit && !stoppedAlertIds.has(a.id) ? "border-red-400/30 bg-red-500/15 text-red-300" : isWarn ? "border-amber-400/30 bg-amber-500/15 text-amber-300" : "border-slate-400/30 bg-slate-500/15 text-slate-300"}>
+                      {stoppedAlertIds.has(a.id) ? (language === "ar" ? "🔇 موقوف" : "🔇 Stopped") : isCrit ? (language === "ar" ? "حرج 🔥" : "Critical 🔥") : isWarn ? (language === "ar" ? "تحذير" : "Warning") : (language === "ar" ? "معلومة" : "Info")}
+                    </Badge>
+                    {/* Stop button: sender can stop their own, owner can stop any */}
+                    {(isCrit || emergencyActive) && !stoppedAlertIds.has(a.id) && (isOwner || a.sender === currentUser?.name) && (
+                      <Btn variant="secondary" className="h-7 px-3 text-xs" onClick={() => {
+                        setStoppedAlertIds(prev => new Set([...prev, a.id]));
+                        if (emergencyActive) { stopEmergencySound(); setEmergencyActive(false); }
+                        showToast(language === "ar" ? "🔇 تم إيقاف الإنذار" : "🔇 Alert stopped", "info");
+                      }}>🔇 {language === "ar" ? "إيقاف" : "Stop"}</Btn>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -2275,8 +2300,13 @@ export default function App() {
               ? `امسح رمز QR الخاص بـ ${formatBuilding(snapshot.buildings.find(b => b.id === currentUser?.assignedBuildingId), language)} لتسجيل حضورك`
               : `Scan the QR code of ${formatBuilding(snapshot.buildings.find(b => b.id === currentUser?.assignedBuildingId), language)} to clock in`}
           </p>
-          <Btn onClick={() => { setQrContext("attendance"); setQrModalOpen(true); }} className="h-14 px-8 text-lg">
-            📷 {language === "ar" ? "مسح QR الآن" : "Scan QR Now"}
+          <div className="rounded-2xl border border-amber-400/20 bg-amber-500/5 p-4 text-center text-sm text-amber-300">
+            {language === "ar"
+              ? "🔒 رمز QR الخاص بمبناك سيُعطى لك من المالك لطباعته والوصول إليه فقط في الموقع"
+              : "🔒 Your building's QR code will be given to you by the owner for on-site use only"}
+          </div>
+          <Btn onClick={clockIn} className="h-14 px-8 text-lg">
+            ✅ {language === "ar" ? "تسجيل حضور" : "Clock In"}
           </Btn>
         </div>
       </Panel>
@@ -2991,58 +3021,81 @@ export default function App() {
         const b = snapshot.buildings.find(x => x.id === qrModalBuilding);
         const qrImg = buildingQrImages[qrModalBuilding];
         if (!b) return null;
+        const assignedGuard = guardUsers.find(u => u.assignedBuildingId === b.id);
         return (
           <div className="fixed inset-0 z-[90] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.9)" }}
             onClick={e => { if (e.target === e.currentTarget) setQrModalBuilding(null); }}>
-            <div className="mx-4 w-full max-w-xs rounded-[28px] border border-white/10 bg-[#0b132b] p-6 shadow-2xl">
+            <div className="mx-4 w-full max-w-sm rounded-[28px] border border-white/10 bg-[#0b132b] p-6 shadow-2xl">
               <div className="mb-4 flex items-center justify-between">
                 <div>
                   <div className="text-lg font-black text-amber-400">{language === "ar" ? b.nameAr : b.nameEn}</div>
-                  <div className="text-xs text-slate-400">{b.area}</div>
+                  <div className="text-xs text-slate-400">{b.area} · {b.qrCode}</div>
                 </div>
                 <button onClick={() => setQrModalBuilding(null)} className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300">✕</button>
               </div>
 
               {/* QR Code */}
-              <div className="flex flex-col items-center gap-4">
+              <div className="flex justify-center">
                 {qrImg
-                  ? <div className="rounded-2xl bg-white p-4"><img src={qrImg} alt={`QR ${b.nameEn}`} className="h-56 w-56" /></div>
-                  : <div className="flex h-56 w-56 items-center justify-center rounded-2xl bg-white/10 text-slate-500">{language === "ar" ? "جارٍ إنشاء QR..." : "Generating QR..."}</div>
+                  ? <div className="rounded-2xl bg-white p-4 shadow-xl"><img src={qrImg} alt={`QR ${b.nameEn}`} className="h-52 w-52" /></div>
+                  : <div className="flex h-52 w-52 items-center justify-center rounded-2xl bg-white/10 text-slate-500 text-sm">{language === "ar" ? "جارٍ إنشاء QR..." : "Generating..."}</div>
                 }
-                <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-4 py-2 text-center">
-                  <div className="font-mono text-sm font-bold text-amber-300">{b.qrCode}</div>
-                  <div className="text-xs text-slate-500 mt-0.5">{language === "ar" ? "رمز المبنى" : "Building Code"}</div>
-                </div>
+              </div>
+
+              {/* Security note */}
+              <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-300">
+                🔒 {language === "ar"
+                  ? "هذا الرمز مخصص للمالك فقط — اطبعه وضعه في المبنى، لا يمكن للحراس رؤيته داخل التطبيق"
+                  : "Owner only — print this and place it in the building. Guards cannot see it in the app."}
               </div>
 
               {/* Actions */}
-              <div className="mt-4 flex gap-2">
-                <Btn className="flex-1" onClick={async () => {
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <Btn onClick={async () => {
                   if (!qrImg) return;
-                  const a = document.createElement("a");
-                  a.href = qrImg;
-                  a.download = `QR-${b.qrCode}-${language === "ar" ? b.nameAr : b.nameEn}.png`;
-                  a.click();
+                  const a = document.createElement("a"); a.href = qrImg;
+                  a.download = `QR-${b.qrCode}.png`; a.click();
                   showToast(language === "ar" ? "✅ تم تنزيل QR" : "✅ QR Downloaded");
-                }}>⬇ {language === "ar" ? "تنزيل" : "Download"}</Btn>
-                <Btn variant="secondary" className="flex-1" onClick={async () => {
+                }}>⬇ {language === "ar" ? "تنزيل للطباعة" : "Download"}</Btn>
+                <Btn variant="secondary" onClick={async () => {
                   if (!qrImg) return;
                   try {
                     const blob = await fetch(qrImg).then(r => r.blob());
-                    await navigator.share({ files: [new File([blob], `QR-${b.qrCode}.png`, { type: "image/png" })], title: `QR - ${b.nameEn}` });
+                    await navigator.share({ files: [new File([blob], `QR-${b.qrCode}.png`, { type: "image/png" })], title: `QR ${b.nameEn}` });
                   } catch {
-                    showToast(language === "ar" ? "شارك من خلال التنزيل" : "Download to share", "info");
+                    const a = document.createElement("a"); a.href = qrImg;
+                    a.download = `QR-${b.qrCode}.png`; a.click();
+                    showToast(language === "ar" ? "تم تنزيل QR" : "QR Downloaded");
                   }
                 }}>↗ {language === "ar" ? "مشاركة" : "Share"}</Btn>
               </div>
 
-              {/* Instructions */}
-              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3 text-xs text-slate-400">
-                <div className="font-bold text-slate-300 mb-1">📋 {language === "ar" ? "تعليمات الاستخدام:" : "Usage Instructions:"}</div>
-                <div>{language === "ar" ? "• ضع هذا الرمز في المبنى في مكان واضح" : "• Place this code in a visible spot in the building"}</div>
-                <div>{language === "ar" ? "• الحارس يمسحه لتسجيل الحضور أو إرسال تقرير" : "• Guard scans it to clock in or submit a report"}</div>
-                <div>{language === "ar" ? "• كل مبنى له رمز فريد خاص به" : "• Each building has its own unique QR code"}</div>
-              </div>
+              {/* Send to guard via chat */}
+              {assignedGuard && (isOwner || isAdmin) && qrImg && (
+                <Btn variant="secondary" className="mt-2 w-full" onClick={() => {
+                  // Send QR as image in chat to assigned guard
+                  const conv = visibleConversations.find(c => c.participantId === assignedGuard.id)
+                    ?? { id: `c-${assignedGuard.id}`, participantId: assignedGuard.id, participantName: assignedGuard.name, participantRole: assignedGuard.role as Role, messages: [] };
+                  const msg: ChatMessage = {
+                    id: `msg-${Date.now()}`, senderId: currentUser?.id ?? "", kind: "image",
+                    imageUrl: qrImg,
+                    text: `QR رمز ${language === "ar" ? b.nameAr : b.nameEn} — اطبعه وضعه في مكان واضح`,
+                    time: chatTime(language),
+                  };
+                  const updated = { ...conv, messages: [...(conv.messages ?? []), msg] };
+                  void saveConversation(updated);
+                  mutate(prev => {
+                    const exists = prev.conversations.find(c => c.id === conv.id);
+                    if (exists) return { ...prev, conversations: prev.conversations.map(c => c.id === conv.id ? updated : c) };
+                    return { ...prev, conversations: [updated, ...prev.conversations] };
+                  });
+                  setQrModalBuilding(null);
+                  setActiveTab("chat");
+                  showToast(language === "ar" ? `✅ تم إرسال QR لـ ${assignedGuard.name}` : `✅ QR sent to ${assignedGuard.name}`, "success");
+                }}>
+                  💬 {language === "ar" ? `إرسال لـ ${assignedGuard.name} عبر الشات` : `Send to ${assignedGuard.name} via Chat`}
+                </Btn>
+              )}
             </div>
           </div>
         );
