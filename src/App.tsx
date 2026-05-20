@@ -340,7 +340,7 @@ export default function App() {
 
   const visibleTabs = useMemo((): Tab[] => {
     if (isGuard) return ["reports", "alerts", "buildings", "visitors", "attendance", "tasks", "chat", "shifts", "sos", "settings"];
-    if (isAdmin) return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "attendance", "tasks", "chat", "shifts", "violations", "map", "settings"];
+    if (isAdmin) return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "tasks", "chat", "shifts", "violations", "map", "settings"];
     return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "attendance", "tasks", "chat", "analytics", "audit", "shifts", "violations", "map", "sos", "system", "settings"];
   }, [isAdmin, isGuard]);
 
@@ -2306,14 +2306,43 @@ export default function App() {
         const last = myRecs[0];
         const isCheckedIn = last && !last.checkOut;
         return (
-          <div className={`rounded-2xl border p-4 flex items-center gap-4 ${isCheckedIn ? "border-emerald-500/30 bg-emerald-500/10" : "border-slate-500/20 bg-white/5"}`}>
-            <span className="text-3xl">{isCheckedIn ? "✅" : "🔴"}</span>
-            <div>
-              <div className={`font-black ${isCheckedIn ? "text-emerald-300" : "text-slate-400"}`}>
-                {isCheckedIn ? (language === "ar" ? "أنت مسجل حضوراً" : "You are clocked in") : (language === "ar" ? "لم تسجل حضوراً اليوم" : "Not clocked in today")}
+          <div className={`rounded-2xl border p-5 ${isCheckedIn ? "border-emerald-500/40 bg-emerald-500/10" : last ? "border-slate-500/20 bg-white/5" : "border-slate-500/10 bg-white/3"}`}>
+            <div className="flex items-center gap-4">
+              <div className={`flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl text-3xl ${isCheckedIn ? "bg-emerald-500/20" : "bg-slate-500/10"}`}>
+                {isCheckedIn ? "🟢" : last ? "🔴" : "⭕"}
               </div>
-              {last && <div className="text-xs text-slate-400">{language === "ar" ? "منذ:" : "Since:"} {last.time}</div>}
-              {isCheckedIn && last?.checkOut && <div className="text-xs text-slate-400">{language === "ar" ? "خروج:" : "Out:"} {last.checkOut}</div>}
+              <div className="flex-1">
+                <div className={`text-lg font-black ${isCheckedIn ? "text-emerald-300" : last ? "text-red-300" : "text-slate-500"}`}>
+                  {isCheckedIn
+                    ? (language === "ar" ? "مسجل دخول" : "CLOCKED IN")
+                    : last
+                    ? (language === "ar" ? "مسجل خروج" : "CLOCKED OUT")
+                    : (language === "ar" ? "لم تسجل اليوم" : "NOT REGISTERED TODAY")}
+                </div>
+                {last && (
+                  <div className="mt-1 text-sm text-slate-400">
+                    {isCheckedIn
+                      ? `${language === "ar" ? "⏰ دخول:" : "⏰ In:"} ${last.time}`
+                      : `${language === "ar" ? "⏰ خروج:" : "⏰ Out:"} ${last.checkOut}`}
+                  </div>
+                )}
+                {last?.checkOut && last?.time && (
+                  <div className="mt-0.5 text-xs text-slate-500">
+                    {(() => {
+                      try {
+                        const inT = new Date(last.time.replace(" ", "T"));
+                        const outT = new Date((last.checkOut ?? "").replace(" ", "T"));
+                        const diff = Math.round((outT.getTime() - inT.getTime()) / 60000);
+                        const h = Math.floor(diff / 60); const m = diff % 60;
+                        return language === "ar" ? `المدة: ${h}س ${m}د` : `Duration: ${h}h ${m}m`;
+                      } catch { return ""; }
+                    })()}
+                  </div>
+                )}
+              </div>
+              <div className={`rounded-xl border px-3 py-1 text-xs font-black ${isCheckedIn ? "border-emerald-400/30 text-emerald-300" : "border-red-400/30 text-red-300"}`}>
+                {isCheckedIn ? (language === "ar" ? "داخل" : "IN") : (language === "ar" ? "خارج" : "OUT")}
+              </div>
             </div>
           </div>
         );
@@ -2338,12 +2367,24 @@ export default function App() {
             </div>
           )}
 
-          {/* QR Scan button - only works for assigned building */}
-          {currentUser?.assignedBuildingId && (
-            <Btn onClick={() => { setQrContext("attendance"); setQrModalOpen(true); }} className="h-16 px-8 text-lg w-full">
-              📷 {language === "ar" ? "مسح QR المبنى لتسجيل الحضور" : "Scan Building QR to Clock In/Out"}
-            </Btn>
-          )}
+          {/* QR Scan button - shows next action clearly */}
+          {currentUser?.assignedBuildingId && (() => {
+            const todayStr2 = today();
+            const myRecs2 = mergedAttendance.filter(a => a.userId === currentUser.id && a.time.startsWith(todayStr2)).sort((a,b) => b.time.localeCompare(a.time));
+            const lastRec2 = myRecs2[0];
+            const isIn2 = lastRec2 && !lastRec2.checkOut;
+            return (
+              <Btn
+                onClick={() => { setQrContext("attendance"); setQrModalOpen(true); }}
+                variant={isIn2 ? "secondary" : "primary"}
+                className="h-16 w-full text-lg"
+              >
+                {isIn2
+                  ? `📷 ${language === "ar" ? "مسح QR لتسجيل الخروج 🔴" : "Scan QR to Clock OUT 🔴"}`
+                  : `📷 ${language === "ar" ? "مسح QR لتسجيل الدخول 🟢" : "Scan QR to Clock IN 🟢"}`}
+              </Btn>
+            );
+          })()}
 
           <div className="rounded-2xl border border-amber-400/20 bg-amber-500/5 p-3 text-center text-xs text-amber-400">
             🔒 {language === "ar"
