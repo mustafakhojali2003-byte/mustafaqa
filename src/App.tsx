@@ -463,6 +463,18 @@ export default function App() {
   useEffect(() => {
     if ("Notification" in window) setNotificationPermission(Notification.permission);
     void registerNotificationServiceWorker();
+
+    // Listen for messages from service worker (e.g. stop siren from notification button)
+    const handleSWMessage = (event: MessageEvent) => {
+      if (event.data?.type === "STOP_SIREN_FROM_NOTIFICATION") {
+        stopEmergencySound();
+        setEmergencyActive(false);
+      }
+      if (event.data?.type === "NOTIFICATION_CLICKED" && event.data?.emergency) {
+        setActiveTab("sos");
+      }
+    };
+    navigator.serviceWorker?.addEventListener("message", handleSWMessage);
     void ensureRemoteSeed(snapshot.users.filter(u => u.status === "approved"), snapshot.conversations);
 
     const unsubApproved = subscribeApprovedUsers(setRemoteApprovedUsers);
@@ -487,6 +499,7 @@ export default function App() {
       unsubTasks(); unsubShifts(); unsubViolations(); unsubSOS();
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
+      navigator.serviceWorker?.removeEventListener("message", handleSWMessage);
     };
   }, []);
 
@@ -828,10 +841,17 @@ export default function App() {
   const sendMessage = (text: string) => {
     if (!currentUser || !activeConversation || !text.trim()) return;
     const msg: ChatMessage = { id: `msg-${Date.now()}`, senderId: currentUser.id, kind: "text", text: text.trim(), time: chatTime(language) };
+    // Use conversationsSource (includes Firebase data) to find existing conversation
+    const existingInSource = conversationsSource.find(c => c.id === activeConversation.id);
+    const baseConv = existingInSource ?? activeConversation;
+    const updated = { ...baseConv, messages: [...(baseConv.messages ?? []), msg] };
+    // Save to Firebase immediately
+    void saveConversation(updated);
+    // Update local state
     mutate(prev => {
-      const exists = prev.conversations.find(c => c.id === activeConversation.id);
-      if (exists) return { ...prev, conversations: prev.conversations.map(c => c.id === activeConversation.id ? { ...c, messages: [...c.messages, msg] } : c) };
-      return { ...prev, conversations: [{ ...activeConversation, messages: [msg] }, ...prev.conversations] };
+      const localExists = prev.conversations.find(c => c.id === activeConversation.id);
+      if (localExists) return { ...prev, conversations: prev.conversations.map(c => c.id === activeConversation.id ? updated : c) };
+      return { ...prev, conversations: [updated, ...prev.conversations] };
     });
   };
 
@@ -1852,10 +1872,12 @@ export default function App() {
       const kind: ChatMessage["kind"] = file.type.startsWith("video") ? "image" : "image";
       const msg: ChatMessage = { id: `msg-${Date.now()}`, senderId: currentUser.id, kind, imageUrl: dataUrl, time: chatTime(language) };
       mutate(prev => {
-        const exists = prev.conversations.find(c => c.id === activeConversation.id);
-        const updated = exists ? { ...exists, messages: [...exists.messages, msg] } : { ...activeConversation, messages: [msg] };
+        const existingSource = conversationsSource.find(c => c.id === activeConversation.id);
+        const baseConv = existingSource ?? activeConversation;
+        const updated = { ...baseConv, messages: [...(baseConv.messages ?? []), msg] };
         void saveConversation(updated);
-        if (exists) return { ...prev, conversations: prev.conversations.map(c => c.id === activeConversation.id ? updated : c) };
+        const localExists = prev.conversations.find(c => c.id === activeConversation.id);
+        if (localExists) return { ...prev, conversations: prev.conversations.map(c => c.id === activeConversation.id ? updated : c) };
         return { ...prev, conversations: [updated, ...prev.conversations] };
       });
     } catch { showToast(language === "ar" ? "فشل رفع الملف" : "Upload failed", "danger"); }
@@ -1876,10 +1898,12 @@ export default function App() {
         const audioUrl = await fileToDataUrl(new File([blob], "voice.webm"));
         const msg: ChatMessage = { id: `msg-${Date.now()}`, senderId: currentUser.id, kind: "audio", audioUrl, time: chatTime(language) };
         mutate(prev => {
-          const exists = prev.conversations.find(c => c.id === activeConversation.id);
-          const updated = exists ? { ...exists, messages: [...exists.messages, msg] } : { ...activeConversation, messages: [msg] };
+          const srcConv = conversationsSource.find(c => c.id === activeConversation.id);
+          const baseC = srcConv ?? activeConversation;
+          const updated = { ...baseC, messages: [...(baseC.messages ?? []), msg] };
           void saveConversation(updated);
-          if (exists) return { ...prev, conversations: prev.conversations.map(c => c.id === activeConversation.id ? updated : c) };
+          const locEx = prev.conversations.find(c => c.id === activeConversation.id);
+          if (locEx) return { ...prev, conversations: prev.conversations.map(c => c.id === activeConversation.id ? updated : c) };
           return { ...prev, conversations: [updated, ...prev.conversations] };
         });
         stream.getTracks().forEach(t => t.stop());
@@ -2426,9 +2450,16 @@ export default function App() {
             const isAll = taskForm.assignedTo === "all";
             const guards = isAll ? guardUsers : [guardUsers.find(u => u.id === taskForm.assignedTo)].filter(Boolean) as User[];
             guards.forEach(g => {
-              const task = { id: `t-${Date.now()}-${g.id}`, title: taskForm.title.trim(), details: taskForm.details.trim(), assignedTo: g.id, assignedName: g.name, status: "pending" as const, createdAt: nowStamp(), priority: taskForm.priority, dueDate: taskForm.dueDate || undefined };
+              const task: Task = { id: `t-${Date.now()}-${g.id}`, title: taskForm.title.trim(), details: taskForm.details.trim(), assignedTo: g.id, assignedName: g.name, status: "pending", createdAt: nowStamp(), priority: taskForm.priority, dueDate: taskForm.dueDate || undefined };
               void saveTask(task);
               mutate(prev => ({ ...prev, tasks: [task, ...prev.tasks] }));
+              // Send push notification to the guard
+              sendToServiceWorker({
+                title: `📋 ${language === "ar" ? "مهمة جديدة" : "New Task"}`,
+                body: `${taskForm.title.trim()} — ${language === "ar" ? "أنجزها في أقرب وقت" : "Complete as soon as possible"}`,
+                tag: task.id,
+                requireInteraction: false,
+              });
             });
             showToast(language === "ar" ? "تمت إضافة المهمة" : "Task added");
             setTaskForm({ title: "", details: "", assignedTo: "all", priority: "medium", dueDate: "" });
