@@ -125,3 +125,29 @@ export interface VisitorFormPayload {
   arrivalDate: string; arrivalTime: string; notes?: string;
 }
 export type Report2 = Report;
+
+// ─── Patrol Rounds ─────────────────────────────────────────────────────────
+export interface PatrolCheckpoint {
+  buildingId: string;
+  buildingName: string;
+  order: number;
+  scannedAt?: string;
+}
+
+export interface PatrolRound {
+  id: string;
+  guardId: string;
+  guardName: string;
+  startedAt: string;
+  completedAt?: string;
+  checkpoints: PatrolCheckpoint[];
+  status: "active" | "completed" | "missed";
+}
+
+export interface PatrolRoute {
+  id: string;
+  name: string;
+  nameAr: string;
+  buildingIds: string[];
+  createdBy: string;
+}
