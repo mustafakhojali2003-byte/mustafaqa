@@ -1560,8 +1560,8 @@ export default function App() {
         </div>
       )}
 
-      {/* SOS Button - for guards */}
-      {isGuard && (
+      {/* SOS Button - for ALL users */}
+      {(
         <Panel>
           <div className="flex flex-col items-center gap-6 py-4">
             <div className="text-6xl">🚨</div>
