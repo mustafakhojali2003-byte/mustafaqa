@@ -2551,22 +2551,108 @@ export default function App() {
           </div>
         </div>
       </Panel>
-      <div className="space-y-3">
-        {(isGuard && currentUser
-          ? mergedAttendance.filter(a => a.userId === currentUser.id)
-          : mergedAttendance
-        ).slice(0, 20).map(a => (
-          <Panel key={a.id}>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                {!isGuard && <div className="font-black text-white">{a.userName}</div>}
-                <div className="text-sm text-slate-400">{a.time} · {formatBuilding(snapshot.buildings.find(b => b.id === a.buildingId), language)}</div>
+      {/* Owner/Admin: live guard status table */}
+      {!isGuard && (
+        <Panel>
+          <div className="mb-4 font-black text-white">
+            📊 {language === "ar" ? "حالة الحراس اليوم" : "Guards Status Today"}
+          </div>
+          <div className="space-y-2">
+            {guardUsers.length === 0
+              ? <EmptyMsg title={language === "ar" ? "لا حراس" : "No guards"} text="" />
+              : guardUsers.map(g => {
+                  const todayStr = today();
+                  const gRecs = mergedAttendance
+                    .filter(a => a.userId === g.id && a.time.startsWith(todayStr))
+                    .sort((a, b) => b.time.localeCompare(a.time));
+                  const lastRec = gRecs[0];
+                  const isIn = lastRec && !lastRec.checkOut;
+                  const building = snapshot.buildings.find(b => b.id === g.assignedBuildingId);
+                  let duration = "";
+                  if (lastRec?.checkOut) {
+                    try {
+                      const inT = new Date(lastRec.time.replace(" ", "T"));
+                      const outT = new Date(lastRec.checkOut.replace(" ", "T"));
+                      const diff = Math.round((outT.getTime() - inT.getTime()) / 60000);
+                      duration = `${Math.floor(diff/60)}س ${diff%60}د`;
+                    } catch { /* ignore */ }
+                  }
+                  return (
+                    <div key={g.id} className={`flex flex-wrap items-center gap-3 rounded-2xl border p-3 ${isIn ? "border-emerald-500/20 bg-emerald-500/5" : lastRec ? "border-red-500/10 bg-red-500/5" : "border-white/10 bg-white/5"}`}>
+                      {/* Status dot */}
+                      <span className={`h-3 w-3 rounded-full flex-shrink-0 ${isIn ? "bg-emerald-400 animate-pulse" : lastRec ? "bg-red-400" : "bg-slate-600"}`} />
+                      {/* Guard info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-black text-white text-sm">{g.name}</div>
+                        <div className="text-xs text-slate-400">{building ? (language === "ar" ? building.nameAr : building.nameEn) : "—"}</div>
+                      </div>
+                      {/* Status */}
+                      <div className="text-right flex-shrink-0">
+                        <Badge className={isIn ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : lastRec ? "border-red-400/30 bg-red-500/15 text-red-300" : "border-slate-400/30 bg-slate-500/15 text-slate-400"}>
+                          {isIn ? (language === "ar" ? "🟢 داخل" : "🟢 IN") : lastRec ? (language === "ar" ? "🔴 خارج" : "🔴 OUT") : (language === "ar" ? "⭕ لم يسجل" : "⭕ None")}
+                        </Badge>
+                        {lastRec && (
+                          <div className="text-xs text-slate-500 mt-1">
+                            {isIn
+                              ? `${language === "ar" ? "دخل:" : "In:"} ${lastRec.time.split(" ")[1] ?? lastRec.time}`
+                              : `${language === "ar" ? "خرج:" : "Out:"} ${(lastRec.checkOut ?? "").split(" ")[1]} ${duration ? `· ${duration}` : ""}`}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+            }
+          </div>
+        </Panel>
+      )}
+
+      {/* Attendance log */}
+      <Panel>
+        <div className="mb-3 font-black text-white">{language === "ar" ? "سجل الحضور" : "Attendance Log"}</div>
+        <div className="space-y-2">
+          {(isGuard && currentUser
+            ? mergedAttendance.filter(a => a.userId === currentUser.id)
+            : mergedAttendance
+          ).slice(0, 30).map(a => {
+            const isCheckedOut = !!a.checkOut;
+            let dur = "";
+            if (a.checkOut) {
+              try {
+                const inT = new Date(a.time.replace(" ", "T"));
+                const outT = new Date(a.checkOut.replace(" ", "T"));
+                const diff = Math.round((outT.getTime() - inT.getTime()) / 60000);
+                dur = `${Math.floor(diff/60)}س ${diff%60}د`;
+              } catch { /* ignore */ }
+            }
+            return (
+              <div key={a.id} className={`flex flex-wrap items-center gap-3 rounded-2xl border p-3 ${isCheckedOut ? "border-white/10 bg-white/5" : "border-emerald-500/20 bg-emerald-500/5"}`}>
+                <span className="text-lg flex-shrink-0">{isCheckedOut ? "🔴" : "🟢"}</span>
+                <div className="flex-1 min-w-0">
+                  {!isGuard && <div className="font-bold text-white text-sm">{a.userName}</div>}
+                  <div className="text-xs text-slate-400">
+                    {formatBuilding(snapshot.buildings.find(b => b.id === a.buildingId), language)}
+                  </div>
+                </div>
+                <div className="text-right text-xs flex-shrink-0">
+                  <div className="text-slate-300">
+                    {language === "ar" ? "دخول:" : "In:"} {a.time.split(" ")[1] ?? a.time}
+                  </div>
+                  {a.checkOut && (
+                    <div className="text-slate-400">
+                      {language === "ar" ? "خروج:" : "Out:"} {a.checkOut.split(" ")[1]}
+                      {dur && <span className="text-amber-400 ms-1">· {dur}</span>}
+                    </div>
+                  )}
+                  <Badge className={a.method === "qr" ? "border-sky-400/30 bg-sky-500/15 text-sky-300 mt-1" : "border-slate-400/30 bg-slate-500/15 text-slate-400 mt-1"}>
+                    {a.method === "qr" ? "QR" : language === "ar" ? "يدوي" : "Manual"}
+                  </Badge>
+                </div>
               </div>
-              <Badge className={a.method === "qr" ? "border-sky-400/30 bg-sky-500/15 text-sky-300" : "border-slate-400/30 bg-slate-500/15 text-slate-300"}>{a.method === "qr" ? "QR" : language === "ar" ? "يدوي" : "Manual"}</Badge>
-            </div>
-          </Panel>
-        ))}
-      </div>
+            );
+          })}
+        </div>
+      </Panel>
     </div>
   );
 
