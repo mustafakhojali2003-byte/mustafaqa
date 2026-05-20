@@ -279,6 +279,8 @@ export default function App() {
   const [chatMediaUploading, setChatMediaUploading] = useState(false);
   const [selectedBuildingId, setSelectedBuildingId] = useState<string | null>(null);
   const [buildingSearch, setBuildingSearch] = useState("");
+  const [qrModalBuilding, setQrModalBuilding] = useState<string | null>(null);
+  const [buildingQrImages, setBuildingQrImages] = useState<Record<string, string>>({});
   const [showAddBuilding, setShowAddBuilding] = useState(false);
   const [addBuildingForm, setAddBuildingForm] = useState({ nameAr: "", nameEn: "", area: "" });
   const [showAddUserForm, setShowAddUserForm] = useState(false);
@@ -2297,6 +2299,24 @@ export default function App() {
     </div>
   );
 
+  // Generate and cache QR for a building
+  const getOrGenerateBuildingQR = async (building: Building): Promise<string> => {
+    if (buildingQrImages[building.id]) return buildingQrImages[building.id];
+    const payload = JSON.stringify({
+      type: "building",
+      buildingId: building.id,
+      buildingName: building.nameEn,
+      qrCode: building.qrCode,
+      secret: `MUSTAFAQA-${building.id}-2026`,
+    });
+    const qr = await generateBuildingQR(building.id, building.nameEn).catch(() => "");
+    // Use qrService with custom data
+    const { generateQRDataUrl } = await import("./services/qrService");
+    const qrImg = await generateQRDataUrl(payload, 300).catch(() => qr);
+    setBuildingQrImages(prev => ({ ...prev, [building.id]: qrImg }));
+    return qrImg;
+  };
+
   const addBuilding = (e: FormEvent) => {
     e.preventDefault();
     if (!addBuildingForm.nameEn.trim() || !addBuildingForm.nameAr.trim()) return;
@@ -2430,12 +2450,9 @@ export default function App() {
                       <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 font-mono text-sm font-bold text-amber-300">
                         {selectedBuilding.qrCode}
                       </div>
-                      {!isGuard && (
-                        <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={async () => {
-                          const qr = await generateBuildingQR(selectedBuilding.id, selectedBuilding.nameEn).catch(() => "");
-                          if (qr) { const a = document.createElement("a"); a.href = qr; a.download = `qr-${selectedBuilding.id}.png`; a.click(); showToast(language === "ar" ? "تم تنزيل QR" : "QR Downloaded"); }
-                        }}>⬇ QR</Btn>
-                      )}
+                      <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={async () => {
+                          void getOrGenerateBuildingQR(selectedBuilding).then(() => setQrModalBuilding(selectedBuilding.id));
+                        }}>📷 QR</Btn>
                       {isOwner && (
                         <Btn variant="danger" className="h-8 px-3 text-xs" onClick={() => {
                           if (confirm(language === "ar" ? "تأكيد حذف المبنى؟" : "Delete this building?")) deleteBuilding(selectedBuilding.id);
@@ -2968,6 +2985,68 @@ export default function App() {
         </div>
       )}
       {toast && <div className="fixed bottom-4 left-1/2 z-50 w-[min(90vw,460px)] -translate-x-1/2"><div className={`rounded-2xl border px-4 py-3 text-sm font-semibold shadow-2xl backdrop-blur ${getToastClass(toast.tone)}`}>{toast.text}</div></div>}
+
+      {/* ── Building QR Modal ── */}
+      {qrModalBuilding && (() => {
+        const b = snapshot.buildings.find(x => x.id === qrModalBuilding);
+        const qrImg = buildingQrImages[qrModalBuilding];
+        if (!b) return null;
+        return (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.9)" }}
+            onClick={e => { if (e.target === e.currentTarget) setQrModalBuilding(null); }}>
+            <div className="mx-4 w-full max-w-xs rounded-[28px] border border-white/10 bg-[#0b132b] p-6 shadow-2xl">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <div className="text-lg font-black text-amber-400">{language === "ar" ? b.nameAr : b.nameEn}</div>
+                  <div className="text-xs text-slate-400">{b.area}</div>
+                </div>
+                <button onClick={() => setQrModalBuilding(null)} className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300">✕</button>
+              </div>
+
+              {/* QR Code */}
+              <div className="flex flex-col items-center gap-4">
+                {qrImg
+                  ? <div className="rounded-2xl bg-white p-4"><img src={qrImg} alt={`QR ${b.nameEn}`} className="h-56 w-56" /></div>
+                  : <div className="flex h-56 w-56 items-center justify-center rounded-2xl bg-white/10 text-slate-500">{language === "ar" ? "جارٍ إنشاء QR..." : "Generating QR..."}</div>
+                }
+                <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-4 py-2 text-center">
+                  <div className="font-mono text-sm font-bold text-amber-300">{b.qrCode}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">{language === "ar" ? "رمز المبنى" : "Building Code"}</div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="mt-4 flex gap-2">
+                <Btn className="flex-1" onClick={async () => {
+                  if (!qrImg) return;
+                  const a = document.createElement("a");
+                  a.href = qrImg;
+                  a.download = `QR-${b.qrCode}-${language === "ar" ? b.nameAr : b.nameEn}.png`;
+                  a.click();
+                  showToast(language === "ar" ? "✅ تم تنزيل QR" : "✅ QR Downloaded");
+                }}>⬇ {language === "ar" ? "تنزيل" : "Download"}</Btn>
+                <Btn variant="secondary" className="flex-1" onClick={async () => {
+                  if (!qrImg) return;
+                  try {
+                    const blob = await fetch(qrImg).then(r => r.blob());
+                    await navigator.share({ files: [new File([blob], `QR-${b.qrCode}.png`, { type: "image/png" })], title: `QR - ${b.nameEn}` });
+                  } catch {
+                    showToast(language === "ar" ? "شارك من خلال التنزيل" : "Download to share", "info");
+                  }
+                }}>↗ {language === "ar" ? "مشاركة" : "Share"}</Btn>
+              </div>
+
+              {/* Instructions */}
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3 text-xs text-slate-400">
+                <div className="font-bold text-slate-300 mb-1">📋 {language === "ar" ? "تعليمات الاستخدام:" : "Usage Instructions:"}</div>
+                <div>{language === "ar" ? "• ضع هذا الرمز في المبنى في مكان واضح" : "• Place this code in a visible spot in the building"}</div>
+                <div>{language === "ar" ? "• الحارس يمسحه لتسجيل الحضور أو إرسال تقرير" : "• Guard scans it to clock in or submit a report"}</div>
+                <div>{language === "ar" ? "• كل مبنى له رمز فريد خاص به" : "• Each building has its own unique QR code"}</div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Permission Modal ── */}
       {showPermissionModal && (
