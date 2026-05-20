@@ -270,7 +270,7 @@ export default function App() {
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null);
 
   const [reportForm, setReportForm] = useState({ buildingId: buildSeedBuildings()[0].id, text: "", status: "normal" as ReportStatus, mediaUrl: "", mediaKind: "" as "" | "image" | "video", fileName: "" });
-  const [alertForm, setAlertForm] = useState({ status: "Fire / حريق", target: "Everyone / إرسال للكل", text: "", customStatus: "" });
+  const [alertForm, setAlertForm] = useState({ status: "fire", target: "all", text: "", customStatus: "" });
   const [taskForm, setTaskForm] = useState({ title: "", details: "", assignedTo: "all", priority: "medium" as Task["priority"], dueDate: "" });
   const [newUserForm, setNewUserForm] = useState({ name: "", email: "", phone: "", password: "", role: "guard" as Role, buildingId: buildSeedBuildings()[0].id });
 
@@ -370,7 +370,7 @@ export default function App() {
     return Array.from(map.values()).sort((a, b) => b.time.localeCompare(a.time));
   }, [snapshot.sosEvents, remoteSOSEvents]);
 
-  const visibleReports = useMemo(() => isGuard && currentUser ? mergedReports.filter(r => r.senderId === currentUser.id) : mergedReports, [currentUser, isGuard, mergedReports]);
+  const visibleReports = useMemo(() => isGuard && currentUser ? mergedReports.filter(r => r.senderId === currentUser.id) : mergedReports.slice().sort((a,b) => b.time.localeCompare(a.time)), [currentUser, isGuard, mergedReports]);
   const pagedReports = useMemo(() => visibleReports.slice((reportPage - 1) * REPORTS_PER_PAGE, reportPage * REPORTS_PER_PAGE), [reportPage, visibleReports]);
   const filteredUsers = useMemo(() => { const q = userFilter.trim().toLowerCase(); return q ? approvedUsers.filter(u => `${u.name} ${u.email}`.toLowerCase().includes(q)) : approvedUsers; }, [approvedUsers, userFilter]);
   const filteredVisitors = useMemo(() => {
@@ -387,15 +387,19 @@ export default function App() {
 
   const visibleConversations = useMemo(() => {
     if (!currentUser) return [];
-    if (currentUser.role === "owner") {
+    // Owner/Admin: see all users as conversations
+    if (currentUser.role === "owner" || currentUser.role === "admin") {
       return approvedUsers.filter(u => u.id !== currentUser.id).map(u => {
         const existing = conversationsSource.find(c => c.participantId === u.id);
         return existing ?? { id: `c-${u.id}`, participantId: u.id, participantName: u.name, participantRole: u.role, messages: [] };
       });
     }
+    // Guard: ONLY conversation with owner
+    const owner = approvedUsers.find(u => u.role === "owner");
+    if (!owner) return [];
     const existing = conversationsSource.find(c => c.participantId === currentUser.id);
-    if (existing) return [existing];
-    return [{ id: `c-${currentUser.id}`, participantId: currentUser.id, participantName: currentUser.name, participantRole: currentUser.role, messages: [] }];
+    const conv = existing ?? { id: `c-${currentUser.id}`, participantId: currentUser.id, participantName: currentUser.name, participantRole: currentUser.role, messages: [] };
+    return [{ ...conv, participantName: owner.name, participantRole: "owner" as Role }];
   }, [approvedUsers, conversationsSource, currentUser]);
 
   const activeConversation = useMemo(() => visibleConversations.find(c => c.id === conversationId) ?? visibleConversations[0], [conversationId, visibleConversations]);
@@ -556,10 +560,49 @@ export default function App() {
     if (mergedAlerts.length > prevAlertCount.current) {
       const latest = mergedAlerts[0];
       const isCritical = latest.severity === "critical";
-      if (isCritical) { startEmergencySound(); setEmergencyActive(true); vibrateEmergency(); } else { playNormalAlertSound(currentUser.soundEnabled); vibrateDevice(); }
+      const isWarn = latest.severity === "warning";
+      // Don't re-trigger if THIS user sent it (they already triggered sound)
+      if (latest.sender !== currentUser.name) {
+        if (isCritical) {
+          startEmergencySound();
+          setEmergencyActive(true);
+          vibrateEmergency();
+        } else {
+          playNormalAlertSound(currentUser.soundEnabled);
+          vibrateDevice();
+        }
+      }
+      // Push notification for everyone
+      sendToServiceWorker({
+        title: `${isCritical ? "🚨" : isWarn ? "⚠️" : "📢"} ${latest.status}`,
+        body: latest.text,
+        tag: latest.id,
+        requireInteraction: isCritical,
+      });
     }
     prevAlertCount.current = mergedAlerts.length;
   }, [currentUser, mergedAlerts]);
+
+  // ─── Real-time task notifications ────────────────────────────────────────────
+  const prevTaskCount = useRef(0);
+  const initialTasks = useRef(true);
+  useEffect(() => {
+    if (!currentUser || !isGuard) return;
+    const myTasks = mergedTasks.filter(t => t.assignedTo === currentUser.id);
+    if (initialTasks.current) { initialTasks.current = false; prevTaskCount.current = myTasks.length; return; }
+    if (myTasks.length > prevTaskCount.current) {
+      const latest = myTasks[0];
+      playNormalAlertSound(currentUser.soundEnabled);
+      vibrateDevice();
+      sendToServiceWorker({
+        title: `📋 ${language === "ar" ? "مهمة جديدة" : "New Task"}`,
+        body: latest.title,
+        tag: latest.id,
+        requireInteraction: false,
+      });
+    }
+    prevTaskCount.current = myTasks.length;
+  }, [currentUser, isGuard, language, mergedTasks]);
 
   useEffect(() => { const allowedTabIds = visibleTabs as string[]; if (!allowedTabIds.includes(activeTab)) setActiveTab(isGuard ? "reports" : "dashboard"); }, [activeTab, isGuard, visibleTabs]);
   useEffect(() => { if (!visibleConversations.length) return; if (!visibleConversations.find(c => c.id === conversationId)) setConversationId(visibleConversations[0].id); }, [conversationId, visibleConversations]);
@@ -1429,48 +1472,165 @@ export default function App() {
     );
   };
 
+  const sendAlert = (e: FormEvent) => {
+    e.preventDefault();
+    if (!currentUser || !alertForm.text.trim()) return;
+    if (alertForm.status === "other" && !alertForm.customStatus.trim()) return;
+    const typeLabels: Record<string, {ar:string;en:string;severity:AlertLog["severity"]}> = {
+      fire:    { ar: "🔥 حريق",           en: "🔥 Fire",    severity: "critical" },
+      medical: { ar: "🚑 إسعاف طبي",      en: "🚑 Medical", severity: "critical" },
+      flood:   { ar: "🌊 سيول / فيضانات", en: "🌊 Flood",   severity: "warning"  },
+      other:   { ar: `✏️ ${alertForm.customStatus}`, en: `✏️ ${alertForm.customStatus}`, severity: "info" },
+    };
+    const typeInfo = typeLabels[alertForm.status] ?? typeLabels.other;
+    const isCritical = typeInfo.severity === "critical";
+    const statusLabel = language === "ar" ? typeInfo.ar : typeInfo.en;
+    const targetLabel = alertForm.target === "all"
+      ? (language === "ar" ? "الجميع" : "Everyone")
+      : (language === "ar" ? "الحراس فقط" : "Guards only");
+    const alert: AlertLog = {
+      id: `a-${Date.now()}`,
+      status: statusLabel,
+      target: targetLabel,
+      text: alertForm.text.trim(),
+      sender: currentUser.name,
+      time: nowStamp(),
+      severity: typeInfo.severity,
+    };
+    void saveAlert(alert);
+    mutate(prev => ({ ...prev, alerts: [alert, ...prev.alerts] }));
+    // Siren + vibration + push notification
+    if (isCritical) {
+      startEmergencySound();
+      setEmergencyActive(true);
+      vibrateEmergency();
+    } else {
+      playNormalAlertSound(true);
+      vibrateDevice();
+    }
+    sendToServiceWorker({
+      title: `${isCritical ? "🚨" : "⚠️"} ${statusLabel}`,
+      body: `${alertForm.text} — ${language === "ar" ? "بواسطة" : "by"}: ${currentUser.name}`,
+      tag: alert.id,
+      requireInteraction: isCritical,
+    });
+    showToast(language === "ar" ? "✅ تم إرسال التنبيه" : "✅ Alert sent", isCritical ? "danger" : "success");
+    setAlertForm(p => ({ ...p, text: "", customStatus: "" }));
+  };
+
   const renderAlerts = () => (
     <div className="space-y-6">
-      <SectionHead title={language === "ar" ? "التنبيهات" : "Alerts"} />
+      <SectionHead title={language === "ar" ? "نظام الإنذارات" : "Alert System"} />
+
       {(isOwner || isAdmin) && (
         <Panel>
-          <form onSubmit={e => {
-            e.preventDefault();
-            if (!currentUser || !alertForm.text.trim()) return;
-            const alert: AlertLog = { id: `a-${Date.now()}`, status: alertForm.customStatus || alertForm.status, target: alertForm.target, text: alertForm.text.trim(), sender: currentUser.name, time: nowStamp(), severity: alertForm.status.toLowerCase().includes("fire") || alertForm.status.toLowerCase().includes("حريق") ? "critical" : "info" };
-            void saveAlert(alert);
-            mutate(prev => ({ ...prev, alerts: [alert, ...prev.alerts] }), language === "ar" ? "تم إرسال التنبيه" : "Alert sent");
-            setAlertForm(p => ({ ...p, text: "", customStatus: "" }));
-          }} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div><Lbl>{language === "ar" ? "نوع التنبيه" : "Alert Type"}</Lbl>
-                <SelInput value={alertForm.status} onChange={e => setAlertForm(p => ({ ...p, status: e.target.value }))}>
-                  {["Fire / حريق", "Theft / سرقة", "Suspicious Activity / نشاط مريب", "Medical / طبي", "Visitor / زائر", "Custom / مخصص"].map(s => <option key={s} value={s}>{s}</option>)}
-                </SelInput>
-              </div>
-              <div><Lbl>{language === "ar" ? "الهدف" : "Target"}</Lbl>
-                <SelInput value={alertForm.target} onChange={e => setAlertForm(p => ({ ...p, target: e.target.value }))}>
-                  {["Everyone / إرسال للكل", "Guards only / الحراس فقط", "Admins only / الإداريون فقط"].map(t => <option key={t} value={t}>{t}</option>)}
-                </SelInput>
+          <div className="mb-4 font-black text-white">{language === "ar" ? "إرسال إنذار" : "Send Alert"}</div>
+          <form onSubmit={sendAlert} className="space-y-4">
+            {/* Alert type */}
+            <div>
+              <Lbl>{language === "ar" ? "نوع الحالة" : "Situation Type"}</Lbl>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {([
+                  { key: "fire",    label: "🔥 " + (language === "ar" ? "حريق" : "Fire"),    cls: "border-red-500/40 bg-red-500/10 text-red-200" },
+                  { key: "medical", label: "🚑 " + (language === "ar" ? "إسعاف" : "Medical"), cls: "border-red-500/40 bg-red-500/10 text-red-200" },
+                  { key: "flood",   label: "🌊 " + (language === "ar" ? "سيول" : "Flood"),    cls: "border-amber-500/40 bg-amber-500/10 text-amber-200" },
+                  { key: "other",   label: "✏️ " + (language === "ar" ? "أخرى" : "Other"),    cls: "border-slate-500/40 bg-slate-500/10 text-slate-200" },
+                ] as const).map(({ key, label, cls }) => (
+                  <button key={key} type="button" onClick={() => setAlertForm(p => ({ ...p, status: key }))}
+                    className={`rounded-2xl border p-3 text-sm font-bold transition ${alertForm.status === key ? cls + " ring-2 ring-white/20 scale-105" : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
-            <div><Lbl>{language === "ar" ? "نص التنبيه" : "Alert Text"}</Lbl><TxtArea rows={3} required value={alertForm.text} onChange={e => setAlertForm(p => ({ ...p, text: e.target.value }))} /></div>
-            <Btn type="submit">{language === "ar" ? "إرسال التنبيه" : "Send Alert"}</Btn>
+
+            {/* Custom type field for "other" */}
+            {alertForm.status === "other" && (
+              <div>
+                <Lbl>{language === "ar" ? "اكتب نوع الحالة" : "Specify Alert Type"}</Lbl>
+                <TxtInput required value={alertForm.customStatus} onChange={e => setAlertForm(p => ({ ...p, customStatus: e.target.value }))} placeholder={language === "ar" ? "مثال: اقتحام، تهديد أمني..." : "e.g. Security breach, intrusion..."} />
+              </div>
+            )}
+
+            {/* Target */}
+            <div>
+              <Lbl>{language === "ar" ? "الجهة المستهدفة" : "Target"}</Lbl>
+              <div className="flex gap-2">
+                {([
+                  { key: "all",    label: language === "ar" ? "📢 الجميع" : "📢 Everyone" },
+                  { key: "guards", label: language === "ar" ? "👮 الحراس فقط" : "👮 Guards only" },
+                ] as const).map(({ key, label }) => (
+                  <button key={key} type="button" onClick={() => setAlertForm(p => ({ ...p, target: key }))}
+                    className={`flex-1 rounded-2xl border p-3 text-sm font-bold transition ${alertForm.target === key ? "border-amber-400/40 bg-amber-500/10 text-amber-200 ring-2 ring-amber-400/20" : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Message */}
+            <div>
+              <Lbl>{language === "ar" ? "نص الإنذار" : "Alert Message"}</Lbl>
+              <TxtArea rows={3} required value={alertForm.text} onChange={e => setAlertForm(p => ({ ...p, text: e.target.value }))} placeholder={language === "ar" ? "اكتب تفاصيل الحالة..." : "Describe the situation..."} />
+            </div>
+
+            <Btn type="submit" variant={alertForm.status === "fire" || alertForm.status === "medical" ? "danger" : "primary"} className="w-full h-14 text-lg font-black">
+              {alertForm.status === "fire" || alertForm.status === "medical"
+                ? (language === "ar" ? "🚨 إرسال إنذار طارئ" : "🚨 Send Emergency Alert")
+                : (language === "ar" ? "📢 إرسال التنبيه" : "📢 Send Alert")}
+            </Btn>
           </form>
         </Panel>
       )}
-      <div className="space-y-3">
-        {mergedAlerts.length === 0 ? <EmptyMsg title={language === "ar" ? "لا تنبيهات" : "No Alerts"} text="" /> : mergedAlerts.map(a => (
-          <Panel key={a.id}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2"><Badge className={a.severity === "critical" ? "border-red-400/30 bg-red-500/15 text-red-300" : a.severity === "warning" ? "border-amber-400/30 bg-amber-500/15 text-amber-300" : "border-sky-400/30 bg-sky-500/15 text-sky-300"}>{a.status}</Badge></div>
-                <p className="mt-2 text-sm text-slate-300">{a.text}</p>
-                <div className="mt-1 text-xs text-slate-500">{a.sender} · {a.time}</div>
-              </div>
+
+      {/* Active critical alerts banner */}
+      {mergedAlerts.some(a => a.severity === "critical") && (
+        <div className="rounded-2xl border border-red-500/50 bg-red-500/10 p-4 animate-pulse">
+          <div className="flex items-center gap-3">
+            <span className="text-3xl">🚨</span>
+            <div>
+              <div className="font-black text-red-300">{language === "ar" ? "يوجد إنذار طارئ نشط!" : "Active Emergency Alert!"}</div>
+              <div className="text-sm text-red-400">{mergedAlerts.find(a => a.severity === "critical")?.status}</div>
             </div>
-          </Panel>
-        ))}
+            {emergencyActive && (
+              <Btn variant="danger" className="ms-auto" onClick={() => { stopEmergencySound(); setEmergencyActive(false); }}>
+                🔇 {language === "ar" ? "إيقاف الصفارة" : "Stop Siren"}
+              </Btn>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Alert log */}
+      <div className="space-y-3">
+        {mergedAlerts.length === 0
+          ? <EmptyMsg title={language === "ar" ? "لا تنبيهات" : "No Alerts"} text="" />
+          : mergedAlerts.map(a => {
+            const isCrit = a.severity === "critical";
+            const isWarn = a.severity === "warning";
+            return (
+              <div key={a.id} className={`rounded-2xl border p-4 ${isCrit ? "border-red-500/40 bg-red-500/10 " + (a === mergedAlerts[0] ? "animate-pulse" : "") : isWarn ? "border-amber-500/30 bg-amber-500/5" : "border-white/10 bg-white/5"}`}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <span className="text-2xl mt-0.5">{isCrit ? "🚨" : isWarn ? "⚠️" : "📢"}</span>
+                    <div>
+                      <div className="font-black text-white">{a.status}</div>
+                      <p className="mt-1 text-sm text-slate-300">{a.text}</p>
+                      <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
+                        <span>👤 {a.sender}</span>
+                        <span>🕐 {a.time}</span>
+                        <span>📍 {a.target}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <Badge className={isCrit ? "border-red-400/30 bg-red-500/15 text-red-300" : isWarn ? "border-amber-400/30 bg-amber-500/15 text-amber-300" : "border-sky-400/30 bg-sky-500/15 text-sky-300"}>
+                    {isCrit ? (language === "ar" ? "حرج" : "Critical") : isWarn ? (language === "ar" ? "تحذير" : "Warning") : (language === "ar" ? "معلومة" : "Info")}
+                  </Badge>
+                </div>
+              </div>
+            );
+          })
+        }
       </div>
     </div>
   );
