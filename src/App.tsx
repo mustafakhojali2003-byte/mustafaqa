@@ -464,10 +464,27 @@ export default function App() {
     const validTabs: Tab[] = ["reports","alerts","chat","tasks","sos","visitors","shifts","users","buildings","dashboard","attendance","analytics","audit","system","settings","violations","map"];
     if (tab && validTabs.includes(tab)) {
       setActiveTab(tab);
-      // Clean URL without reload
       window.history.replaceState({}, "", "/");
     }
   }, []);
+
+  // Show permission modal if user is logged in but hasn't granted permission yet
+  // Runs on every app open, not just login
+  useEffect(() => {
+    if (!currentUser) return;
+    if (!("Notification" in window)) return;
+    if (Notification.permission === "granted") {
+      // Permission already granted — just ensure FCM token is saved
+      void initFCM(currentUser.id);
+      return;
+    }
+    if (Notification.permission === "denied") return; // User explicitly denied, don't ask again
+    // Permission is "default" → show modal
+    const timer = setTimeout(() => {
+      setShowPermissionModal(true);
+    }, 1500); // small delay so app loads first
+    return () => clearTimeout(timer);
+  }, [currentUser]);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
@@ -532,16 +549,7 @@ export default function App() {
     if (!currentUserId) return;
     setActiveUserIds(prev => Array.from(new Set([...prev.filter(id => id !== currentUserId), currentUserId])));
 
-    // Request notification permission immediately on login
-    if ("Notification" in window) {
-      if (Notification.permission === "default") {
-        // Show our custom modal first, then browser prompt
-        setShowPermissionModal(true);
-      } else if (Notification.permission === "granted") {
-        // Already granted - just init FCM silently
-        void initFCM(currentUserId);
-      }
-    }
+    // FCM + permission handled by the global effect below
 
     // Listen to foreground FCM messages
     const unsubFCM = listenForegroundMessages((title, body, type) => {
