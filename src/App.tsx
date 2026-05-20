@@ -7,6 +7,7 @@ import { deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, sa
 import { exportReportsPDF, exportShiftReportPDF, exportFullDashboardPDF } from "./services/pdfService";
 import { generateVisitorQR, generateBuildingQR } from "./services/qrService";
 import { analyzeData } from "./services/analyticsService";
+import { validateEmail } from "./services/emailVerification";
 import type { AlertLog, AppSnapshot, AttendanceRecord, AuditEntry, AuditSeverity, Building, ChatMessage, Conversation, Language, NewAccountPayload, Pair, Report, ReportStatus, Role, Shift, SOSEvent, Tab, Task, Toast, ToastTone, User, Violation, VisitorFormPayload, VisitorRecord } from "./types/security";
 
 const STORAGE_KEY = "mustafaqa-v1";
@@ -589,9 +590,12 @@ export default function App() {
 
   const handleCreateAccount = async (payload: NewAccountPayload) => {
     setAuthError(null); setAuthInfo(null);
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-    if (!emailRegex.test(payload.email.trim())) return setAuthError(language === "ar" ? "يرجى إدخال بريد إلكتروني صحيح (مثال: name@gmail.com)" : "Please enter a valid email (e.g. name@gmail.com)");
-    if (snapshot.users.some(u => u.email.toLowerCase() === payload.email.trim().toLowerCase())) return setAuthError(language === "ar" ? "البريد مستخدم بالفعل" : "Email already registered");
+    const emailCheck = validateEmail(payload.email);
+    if (!emailCheck.valid) return setAuthError(language === "ar" ? (emailCheck.errorAr ?? "بريد غير صحيح") : (emailCheck.errorEn ?? "Invalid email"));
+    if (snapshot.users.some(u => u.email.toLowerCase() === payload.email.trim().toLowerCase()) ||
+        remotePendingUsers.some(u => u.email.toLowerCase() === payload.email.trim().toLowerCase()))
+      return setAuthError(language === "ar" ? "البريد مستخدم بالفعل" : "Email already registered");
+    if (emailCheck.suggestion) setAuthInfo(emailCheck.suggestion);
     const newUser: User = {
       id: `user-${Date.now()}`, name: payload.name.trim(), email: payload.email.trim(),
       phone: payload.role === "admin" ? "" : payload.phone.trim(), role: payload.role, status: "pending",
