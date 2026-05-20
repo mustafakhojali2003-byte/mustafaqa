@@ -399,7 +399,7 @@ export default function App() {
 
   const visibleTabs = useMemo((): Tab[] => {
     if (isGuard) return ["reports", "alerts", "buildings", "visitors", "attendance", "tasks", "chat", "patrol", "sos", "settings"];
-    if (isAdmin) return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "tasks", "chat", "violations", "scores", "patrol", "settings"];
+    if (isAdmin) return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "tasks", "chat", "violations", "scores", "patrol", "sos", "settings"];
     return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "attendance", "tasks", "chat", "analytics", "audit", "violations", "scores", "patrol", "sos", "system", "settings"];
   }, [isAdmin, isGuard]);
 
