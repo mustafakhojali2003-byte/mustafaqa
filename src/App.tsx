@@ -297,7 +297,7 @@ export default function App() {
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null);
 
   const [reportForm, setReportForm] = useState({ buildingId: buildSeedBuildings()[0].id, text: "", status: "normal" as ReportStatus, mediaUrl: "", mediaKind: "" as "" | "image" | "video", fileName: "" });
-  const [alertForm, setAlertForm] = useState({ status: "fire", target: "all", text: "", customStatus: "" });
+  const [alertForm, setAlertForm] = useState({ status: "fire", target: "all", text: "", customStatus: "", specificUserId: "" });
   const [taskForm, setTaskForm] = useState({ title: "", details: "", assignedTo: "all", priority: "medium" as Task["priority"], dueDate: "" });
   const [newUserForm, setNewUserForm] = useState({ name: "", email: "", phone: "", password: "", role: "guard" as Role, buildingId: buildSeedBuildings()[0].id });
 
@@ -335,7 +335,7 @@ export default function App() {
   const guardUsers = useMemo(() => approvedUsers.filter(u => u.role === "guard"), [approvedUsers]);
 
   const visibleTabs = useMemo((): Tab[] => {
-    if (isGuard) return ["reports", "buildings", "visitors", "attendance", "tasks", "chat", "shifts", "sos", "settings"];
+    if (isGuard) return ["reports", "alerts", "buildings", "visitors", "attendance", "tasks", "chat", "shifts", "sos", "settings"];
     if (isAdmin) return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "attendance", "tasks", "chat", "shifts", "violations", "map", "settings"];
     return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "attendance", "tasks", "chat", "analytics", "audit", "shifts", "violations", "map", "sos", "system", "settings"];
   }, [isAdmin, isGuard]);
@@ -2071,94 +2071,111 @@ export default function App() {
     <div className="space-y-6">
       <SectionHead title={language === "ar" ? "نظام الإنذارات" : "Alert System"} />
 
-      {(isOwner || isAdmin) && (
-        <Panel>
-          <div className="mb-4 font-black text-white">{language === "ar" ? "إرسال إنذار" : "Send Alert"}</div>
-          <form onSubmit={sendAlert} className="space-y-4">
-            {/* Alert type */}
-            <div>
-              <Lbl>{language === "ar" ? "نوع الحالة" : "Situation Type"}</Lbl>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {([
-                  { key: "fire",    label: "🔥 " + (language === "ar" ? "حريق" : "Fire"),    cls: "border-red-500/40 bg-red-500/10 text-red-200" },
-                  { key: "medical", label: "🚑 " + (language === "ar" ? "إسعاف" : "Medical"), cls: "border-red-500/40 bg-red-500/10 text-red-200" },
-                  { key: "flood",   label: "🌊 " + (language === "ar" ? "سيول" : "Flood"),    cls: "border-amber-500/40 bg-amber-500/10 text-amber-200" },
-                  { key: "other",   label: "✏️ " + (language === "ar" ? "أخرى" : "Other"),    cls: "border-slate-500/40 bg-slate-500/10 text-slate-200" },
-                ] as const).map(({ key, label, cls }) => (
-                  <button key={key} type="button" onClick={() => setAlertForm(p => ({ ...p, status: key }))}
-                    className={`rounded-2xl border p-3 text-sm font-bold transition ${alertForm.status === key ? cls + " ring-2 ring-white/20 scale-105" : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
+      {/* Send alert form - owner, admin, AND guard */}
+      <Panel>
+        <div className="mb-4 font-black text-white">
+          {isGuard
+            ? `👮 ${language === "ar" ? "إرسال تنبيه للإدارة" : "Send Alert to Management"}`
+            : `📢 ${language === "ar" ? "إرسال إنذار" : "Send Alert"}`}
+        </div>
+        <form onSubmit={sendAlert} className="space-y-4">
+
+          {/* Alert type - 3 options only */}
+          <div>
+            <Lbl>{language === "ar" ? "نوع الحالة" : "Situation Type"}</Lbl>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { key: "fire",  label: "🔥 " + (language === "ar" ? "حريق" : "Fire"),  cls: "border-red-500/40 bg-red-500/10 text-red-200",    desc: language === "ar" ? "سيُشغّل الصفارة" : "Triggers siren" },
+                { key: "flood", label: "🌊 " + (language === "ar" ? "سيول" : "Flood"), cls: "border-amber-500/40 bg-amber-500/10 text-amber-200", desc: language === "ar" ? "تحذير فقط" : "Warning only" },
+                { key: "other", label: "✏️ " + (language === "ar" ? "أخرى" : "Other"), cls: "border-slate-500/40 bg-slate-500/10 text-slate-200",  desc: language === "ar" ? "اكتب النوع" : "Specify type" },
+              ] as const).map(({ key, label, cls, desc }) => (
+                <button key={key} type="button" onClick={() => setAlertForm(p => ({ ...p, status: key }))}
+                  className={`rounded-2xl border p-3 text-center transition ${alertForm.status === key ? cls + " ring-2 ring-white/20 scale-105" : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>
+                  <div className="text-sm font-black">{label}</div>
+                  <div className="text-xs opacity-60 mt-0.5">{desc}</div>
+                </button>
+              ))}
             </div>
+          </div>
 
-            {/* Custom type field for "other" */}
-            {alertForm.status === "other" && (
-              <div>
-                <Lbl>{language === "ar" ? "اكتب نوع الحالة" : "Specify Alert Type"}</Lbl>
-                <TxtInput required value={alertForm.customStatus} onChange={e => setAlertForm(p => ({ ...p, customStatus: e.target.value }))} placeholder={language === "ar" ? "مثال: اقتحام، تهديد أمني..." : "e.g. Security breach, intrusion..."} />
-              </div>
-            )}
+          {/* Custom type field */}
+          {alertForm.status === "other" && (
+            <div>
+              <Lbl>{language === "ar" ? "اكتب نوع الحالة" : "Specify Alert Type"}</Lbl>
+              <TxtInput required value={alertForm.customStatus} onChange={e => setAlertForm(p => ({ ...p, customStatus: e.target.value }))} placeholder={language === "ar" ? "مثال: اقتحام، تهديد أمني..." : "e.g. Security breach, intrusion..."} />
+            </div>
+          )}
 
-            {/* Target */}
+          {/* Target - owner/admin see full options, guard sends to management only */}
+          {!isGuard && (
             <div>
               <Lbl>{language === "ar" ? "الجهة المستهدفة" : "Target"}</Lbl>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {([
-                  { key: "all",    label: language === "ar" ? "📢 الجميع" : "📢 Everyone" },
-                  { key: "guards", label: language === "ar" ? "👮 الحراس فقط" : "👮 Guards only" },
+                  { key: "all",      label: language === "ar" ? "📢 الجميع" : "📢 Everyone" },
+                  { key: "guards",   label: language === "ar" ? "👮 الحراس فقط" : "👮 Guards only" },
+                  { key: "specific", label: language === "ar" ? "👤 شخص محدد" : "👤 Specific person" },
                 ] as const).map(({ key, label }) => (
-                  <button key={key} type="button" onClick={() => setAlertForm(p => ({ ...p, target: key }))}
-                    className={`flex-1 rounded-2xl border p-3 text-sm font-bold transition ${alertForm.target === key ? "border-amber-400/40 bg-amber-500/10 text-amber-200 ring-2 ring-amber-400/20" : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>
+                  <button key={key} type="button" onClick={() => setAlertForm(p => ({ ...p, target: key, specificUserId: "" }))}
+                    className={`rounded-2xl border p-3 text-sm font-bold transition ${alertForm.target === key ? "border-amber-400/40 bg-amber-500/10 text-amber-200 ring-2 ring-amber-400/20" : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>
                     {label}
                   </button>
                 ))}
               </div>
+              {alertForm.target === "specific" && (
+                <div className="mt-3">
+                  <Lbl>{language === "ar" ? "اختر المستخدم" : "Select User"}</Lbl>
+                  <SelInput value={alertForm.specificUserId} onChange={e => setAlertForm(p => ({ ...p, specificUserId: e.target.value }))}>
+                    <option value="">{language === "ar" ? "— اختر —" : "— Select —"}</option>
+                    {approvedUsers.filter(u => u.id !== currentUser?.id).map(u => (
+                      <option key={u.id} value={u.id}>{u.name} ({pair(language, roleLabels[u.role])})</option>
+                    ))}
+                  </SelInput>
+                </div>
+              )}
             </div>
+          )}
 
-            {/* Message */}
-            <div>
-              <Lbl>{language === "ar" ? "نص الإنذار" : "Alert Message"}</Lbl>
-              <TxtArea rows={3} required value={alertForm.text} onChange={e => setAlertForm(p => ({ ...p, text: e.target.value }))} placeholder={language === "ar" ? "اكتب تفاصيل الحالة..." : "Describe the situation..."} />
-            </div>
-
-            <Btn type="submit" variant={alertForm.status === "fire" || alertForm.status === "medical" ? "danger" : "primary"} className="w-full h-14 text-lg font-black">
-              {alertForm.status === "fire" || alertForm.status === "medical"
-                ? (language === "ar" ? "🚨 إرسال إنذار طارئ" : "🚨 Send Emergency Alert")
-                : (language === "ar" ? "📢 إرسال التنبيه" : "📢 Send Alert")}
-            </Btn>
-          </form>
-        </Panel>
-      )}
-
-      {/* Active critical alerts banner */}
-      {mergedAlerts.some(a => a.severity === "critical") && (
-        <div className="rounded-2xl border border-red-500/50 bg-red-500/10 p-4 animate-pulse">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl">🚨</span>
-            <div>
-              <div className="font-black text-red-300">{language === "ar" ? "يوجد إنذار طارئ نشط!" : "Active Emergency Alert!"}</div>
-              <div className="text-sm text-red-400">{mergedAlerts.find(a => a.severity === "critical")?.status}</div>
-            </div>
-            {emergencyActive && (
-              <Btn variant="danger" className="ms-auto" onClick={() => { stopEmergencySound(); setEmergencyActive(false); }}>
-                🔇 {language === "ar" ? "إيقاف الصفارة" : "Stop Siren"}
-              </Btn>
-            )}
+          {/* Message */}
+          <div>
+            <Lbl>{language === "ar" ? "نص التنبيه" : "Alert Message"}</Lbl>
+            <TxtArea rows={3} required value={alertForm.text} onChange={e => setAlertForm(p => ({ ...p, text: e.target.value }))} placeholder={language === "ar" ? "اكتب تفاصيل الحالة..." : "Describe the situation..."} />
           </div>
+
+          <Btn type="submit" variant={alertForm.status === "fire" ? "danger" : "primary"} className="w-full h-14 text-lg font-black">
+            {alertForm.status === "fire"
+              ? (language === "ar" ? "🚨 إرسال إنذار حريق + تفعيل الصفارة" : "🚨 Send Fire Alert + Siren")
+              : (language === "ar" ? "📢 إرسال التنبيه" : "📢 Send Alert")}
+          </Btn>
+        </form>
+      </Panel>
+
+      {/* Active critical banner */}
+      {mergedAlerts.some(a => a.severity === "critical") && (
+        <div className="rounded-2xl border border-red-500/50 bg-red-500/10 p-4 animate-pulse flex items-center gap-4">
+          <span className="text-3xl">🚨</span>
+          <div className="flex-1">
+            <div className="font-black text-red-300">{language === "ar" ? "إنذار طارئ نشط!" : "Active Emergency Alert!"}</div>
+            <div className="text-sm text-red-400">{mergedAlerts.find(a => a.severity === "critical")?.status}</div>
+          </div>
+          {emergencyActive && (
+            <Btn variant="danger" onClick={() => { stopEmergencySound(); setEmergencyActive(false); }}>
+              🔇 {language === "ar" ? "إيقاف الصفارة" : "Stop Siren"}
+            </Btn>
+          )}
         </div>
       )}
 
       {/* Alert log */}
-      <div className="space-y-3">
+      <Panel>
+        <div className="mb-3 font-black text-white">{language === "ar" ? "سجل التنبيهات" : "Alert Log"}</div>
         {mergedAlerts.length === 0
           ? <EmptyMsg title={language === "ar" ? "لا تنبيهات" : "No Alerts"} text="" />
           : mergedAlerts.map(a => {
             const isCrit = a.severity === "critical";
             const isWarn = a.severity === "warning";
             return (
-              <div key={a.id} className={`rounded-2xl border p-4 ${isCrit ? "border-red-500/40 bg-red-500/10 " + (a === mergedAlerts[0] ? "animate-pulse" : "") : isWarn ? "border-amber-500/30 bg-amber-500/5" : "border-white/10 bg-white/5"}`}>
+              <div key={a.id} className={`mb-3 rounded-2xl border p-4 ${isCrit ? "border-red-500/40 bg-red-500/10 " + (a === mergedAlerts[0] ? "animate-pulse" : "") : isWarn ? "border-amber-500/30 bg-amber-500/5" : "border-white/10 bg-white/5"}`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
                     <span className="text-2xl mt-0.5">{isCrit ? "🚨" : isWarn ? "⚠️" : "📢"}</span>
@@ -2173,18 +2190,18 @@ export default function App() {
                     </div>
                   </div>
                   <Badge className={isCrit ? "border-red-400/30 bg-red-500/15 text-red-300" : isWarn ? "border-amber-400/30 bg-amber-500/15 text-amber-300" : "border-sky-400/30 bg-sky-500/15 text-sky-300"}>
-                    {isCrit ? (language === "ar" ? "حرج" : "Critical") : isWarn ? (language === "ar" ? "تحذير" : "Warning") : (language === "ar" ? "معلومة" : "Info")}
+                    {isCrit ? (language === "ar" ? "حرج 🔥" : "Critical 🔥") : isWarn ? (language === "ar" ? "تحذير" : "Warning") : (language === "ar" ? "معلومة" : "Info")}
                   </Badge>
                 </div>
               </div>
             );
           })
         }
-      </div>
+      </Panel>
     </div>
   );
 
-  const renderAttendance = () => (
+    const renderAttendance = () => (
     <div className="space-y-6">
       <SectionHead title={language === "ar" ? "الحضور" : "Attendance"} subtitle={language === "ar" ? "يجب مسح رمز QR للمبنى المخصص لك" : "Scan the QR code of your assigned building"} />
       <Panel>
