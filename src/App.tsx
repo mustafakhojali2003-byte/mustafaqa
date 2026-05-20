@@ -399,8 +399,8 @@ export default function App() {
 
   const visibleTabs = useMemo((): Tab[] => {
     if (isGuard) return ["reports", "alerts", "buildings", "visitors", "attendance", "tasks", "chat", "patrol", "shifts", "sos", "settings"];
-    if (isAdmin) return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "tasks", "chat", "shifts", "violations", "scores", "patrol", "map", "settings"];
-    return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "attendance", "tasks", "chat", "analytics", "audit", "shifts", "violations", "map", "sos", "system", "settings"];
+    if (isAdmin) return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "tasks", "chat", "shifts", "violations", "scores", "patrol", "settings"];
+    return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "attendance", "tasks", "chat", "analytics", "audit", "shifts", "violations", "sos", "system", "settings"];
   }, [isAdmin, isGuard]);
 
   // ─── Merge remote + local for ALL collections ─────────────────────────────
@@ -986,7 +986,7 @@ export default function App() {
       void sendPushViaWorker(
         `🎫 ${language === "ar" ? "زائر جديد" : "New Visitor"} — ${visitor.guestName}`,
         `${visitor.company} · ${visitor.arrivalDate} ${visitor.arrivalTime} · ${language === "ar" ? "رمز الدخول" : "Pass"}: ${fullVisitor.passCode}`,
-        "visitor",
+        "alert",
         g.id
       );
     });
