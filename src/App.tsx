@@ -284,6 +284,9 @@ export default function App() {
   const [directAddForm, setDirectAddForm] = useState({ name: "", email: "", phone: "", password: "", role: "guard" as Role, buildingId: "" });
   const [editUserId, setEditUserId] = useState<string | null>(null);
   const [editUserForm, setEditUserForm] = useState({ name: "", phone: "", buildingId: "", role: "guard" as Role });
+  const [changePwForm, setChangePwForm] = useState({ current: "", newPw: "", confirm: "" });
+  const [changePwError, setChangePwError] = useState("");
+  const deviceId = typeof window !== "undefined" ? (window.localStorage.getItem("mustafaqa-device-id") || (() => { const id = "DEV-" + Math.random().toString(36).slice(2,8).toUpperCase(); window.localStorage.setItem("mustafaqa-device-id", id); return id; })()) : "—";
   const chatFileRef = useRef<HTMLInputElement | null>(null);
   const [visitorQrMap, setVisitorQrMap] = useState<Record<string, string>>({});
   const [shiftFilter, setShiftFilter] = useState<"all" | "today">("today");
@@ -2192,46 +2195,259 @@ export default function App() {
     </div>
   );
 
-  const renderSettings = () => (
-    <div className="space-y-6">
-      <SectionHead title={language === "ar" ? "الإعدادات" : "Settings"} />
-      <Panel>
-        <div className="space-y-4">
-          <div><Lbl>{language === "ar" ? "اللغة" : "Language"}</Lbl>
-            <div className="flex gap-2">
-              <Btn variant={language === "ar" ? "primary" : "secondary"} onClick={() => setLanguage("ar")}>العربية</Btn>
-              <Btn variant={language === "en" ? "primary" : "secondary"} onClick={() => setLanguage("en")}>English</Btn>
+  const renderSettings = () => {
+    const handleChangePw = (e: FormEvent) => {
+      e.preventDefault();
+      setChangePwError("");
+      if (!currentUser) return;
+      if (hashPassword(changePwForm.current) !== currentUser.passwordHash) {
+        setChangePwError(language === "ar" ? "كلمة السر الحالية غير صحيحة" : "Current password is incorrect");
+        return;
+      }
+      if (changePwForm.newPw.length < 6) {
+        setChangePwError(language === "ar" ? "كلمة السر الجديدة قصيرة جداً (6 أحرف على الأقل)" : "New password too short (min 6 chars)");
+        return;
+      }
+      if (changePwForm.newPw !== changePwForm.confirm) {
+        setChangePwError(language === "ar" ? "كلمتا السر غير متطابقتين" : "Passwords do not match");
+        return;
+      }
+      const updated = { ...currentUser, passwordHash: hashPassword(changePwForm.newPw) };
+      mutate(prev => ({ ...prev, users: prev.users.map(u => u.id === currentUser.id ? updated : u) }));
+      void saveApprovedUser(updated);
+      showToast(language === "ar" ? "✅ تم تغيير كلمة السر" : "✅ Password changed", "success");
+      setChangePwForm({ current: "", newPw: "", confirm: "" });
+    };
+
+    const forceSync = () => {
+      if (!isOnline) { showToast(language === "ar" ? "لا يوجد اتصال بالإنترنت" : "No internet connection", "danger"); return; }
+      setSyncQueue([]);
+      window.localStorage.setItem(SYNC_KEY, "[]");
+      showToast(language === "ar" ? "✅ تمت المزامنة" : "✅ Synced", "success");
+    };
+
+    return (
+      <div className="space-y-6">
+        <SectionHead title={language === "ar" ? "الإعدادات" : "Settings"} subtitle={currentUser?.name} />
+
+        {/* ── Offline warning banner ── */}
+        {!isOnline && (
+          <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-4 flex items-start gap-3">
+            <span className="text-2xl">📵</span>
+            <div>
+              <div className="font-black text-red-300">{language === "ar" ? "أنت غير متصل بالإنترنت" : "You are offline"}</div>
+              <div className="text-sm text-red-400 mt-1">{language === "ar" ? `سيتم حفظ بياناتك محلياً (${syncQueue.length} عملية معلقة)` : `Your data is saved locally (${syncQueue.length} pending)`}</div>
             </div>
           </div>
-          <div><Lbl>{language === "ar" ? "إشعارات سطح المكتب" : "Desktop Notifications"}</Lbl>
-            <div className="flex items-center gap-3">
-              <Btn variant="secondary" onClick={requestDesktopNotification}>{language === "ar" ? "طلب الإذن" : "Request Permission"}</Btn>
-              <Badge className="border-white/10 bg-white/5 text-slate-200">{notificationPermission}</Badge>
+        )}
+
+        {/* ── Section 1: Personal Preferences ── */}
+        <Panel>
+          <div className="mb-4 font-black text-amber-400">⚙️ {language === "ar" ? "التفضيلات الشخصية" : "Personal Preferences"}</div>
+          <div className="space-y-5">
+
+            {/* Language */}
+            <div>
+              <Lbl>{language === "ar" ? "اللغة" : "Language"}</Lbl>
+              <div className="flex gap-2">
+                <Btn variant={language === "ar" ? "primary" : "secondary"} onClick={() => { setLanguage("ar"); document.documentElement.dir = "rtl"; }}>🇸🇦 العربية</Btn>
+                <Btn variant={language === "en" ? "primary" : "secondary"} onClick={() => { setLanguage("en"); document.documentElement.dir = "ltr"; }}>🇬🇧 English</Btn>
+              </div>
+            </div>
+
+            {/* Sound toggle */}
+            <div>
+              <Lbl>{language === "ar" ? "صوت الإشعارات" : "Notification Sound"}</Lbl>
+              <div className="flex items-center gap-3">
+                <button onClick={() => {
+                  if (!currentUser) return;
+                  const updated = { ...currentUser, soundEnabled: !currentUser.soundEnabled };
+                  mutate(prev => ({ ...prev, users: prev.users.map(u => u.id === currentUser.id ? updated : u) }));
+                  void saveApprovedUser(updated);
+                  showToast(updated.soundEnabled ? (language === "ar" ? "🔊 الصوت مفعّل" : "🔊 Sound on") : (language === "ar" ? "🔇 الصوت مكتوم" : "🔇 Sound off"), "info");
+                }} className={`relative h-8 w-14 rounded-full border transition ${currentUser?.soundEnabled ? "border-emerald-400/40 bg-emerald-500/20" : "border-white/10 bg-white/5"}`}>
+                  <span className={`absolute top-1 h-6 w-6 rounded-full transition-all ${currentUser?.soundEnabled ? "start-7 bg-emerald-400" : "start-1 bg-slate-600"}`} />
+                </button>
+                <span className="text-sm text-slate-400">{currentUser?.soundEnabled ? (language === "ar" ? "مفعّل" : "Enabled") : (language === "ar" ? "مكتوم" : "Muted")}</span>
+                {!currentUser?.soundEnabled && <span className="text-xs text-amber-400">⚠️ {language === "ar" ? "لن تسمع إشعارات الطوارئ!" : "You won't hear emergency alerts!"}</span>}
+              </div>
+            </div>
+
+            {/* Desktop notifications */}
+            <div>
+              <Lbl>{language === "ar" ? "إشعارات سطح المكتب / الهاتف" : "Desktop / Push Notifications"}</Lbl>
+              <div className="flex items-center gap-3">
+                <Btn variant="secondary" onClick={requestDesktopNotification}>
+                  🔔 {language === "ar" ? "طلب الإذن" : "Request Permission"}
+                </Btn>
+                <Badge className={notificationPermission === "granted" ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : "border-red-400/30 bg-red-500/15 text-red-300"}>
+                  {notificationPermission === "granted" ? (language === "ar" ? "✅ مفعّل" : "✅ Granted") : notificationPermission === "denied" ? (language === "ar" ? "❌ مرفوض" : "❌ Denied") : (language === "ar" ? "⏳ لم يُحدد" : "⏳ Not set")}
+                </Badge>
+              </div>
+              {notificationPermission !== "granted" && (
+                <p className="mt-2 text-xs text-slate-500">{language === "ar" ? "مطلوب لاستقبال إشعارات الطوارئ حتى وأنت خارج التطبيق" : "Required to receive emergency alerts even when app is in background"}</p>
+              )}
             </div>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300">
-            {isOnline ? `🟢 ${language === "ar" ? "متصل بالإنترنت" : "Online"} · ${syncQueue.length} ${language === "ar" ? "معلقة" : "pending"}` : `🔴 ${language === "ar" ? "بدون إنترنت" : "Offline"} · ${syncQueue.length} ${language === "ar" ? "محفوظة محلياً" : "stored locally"}`}
+        </Panel>
+
+        {/* ── Section 2: Connection & Sync ── */}
+        <Panel>
+          <div className="mb-4 font-black text-amber-400">🔄 {language === "ar" ? "الاتصال والمزامنة" : "Connection & Sync"}</div>
+          <div className="space-y-4">
+            <div className={`flex items-center gap-3 rounded-2xl border p-4 ${isOnline ? "border-emerald-500/20 bg-emerald-500/5" : "border-red-500/20 bg-red-500/5"}`}>
+              <span className={`h-3 w-3 rounded-full ${isOnline ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
+              <div className="flex-1">
+                <div className="font-bold text-white">{isOnline ? (language === "ar" ? "متصل بالإنترنت" : "Online") : (language === "ar" ? "غير متصل" : "Offline")}</div>
+                <div className="text-xs text-slate-400">{language === "ar" ? "Firebase Firestore" : "Firebase Firestore"}</div>
+              </div>
+              <Badge className={isOnline ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : "border-red-400/30 bg-red-500/15 text-red-300"}>
+                {isOnline ? "Online" : "Offline"}
+              </Badge>
+            </div>
+
+            {syncQueue.length > 0 && (
+              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-amber-300">⏳ {language === "ar" ? "عمليات معلقة" : "Pending Operations"}</div>
+                    <div className="text-sm text-slate-400 mt-1">{syncQueue.length} {language === "ar" ? "عملية مخزنة محلياً بانتظار الإرسال" : "operations stored locally"}</div>
+                  </div>
+                  <Btn variant="secondary" onClick={forceSync}>{language === "ar" ? "🔄 مزامنة" : "🔄 Sync Now"}</Btn>
+                </div>
+              </div>
+            )}
+
+            {syncQueue.length === 0 && isOnline && (
+              <div className="text-sm text-slate-500 text-center py-2">✅ {language === "ar" ? "جميع البيانات متزامنة" : "All data is synced"}</div>
+            )}
           </div>
-          <Btn variant="danger" className="w-full" onClick={() => { setCurrentUserId(null); setAuthError(null); setAuthInfo(null); showToast(language === "ar" ? "تم تسجيل الخروج" : "Logged out", "info"); }}>
-            {language === "ar" ? "تسجيل الخروج" : "Logout"}
+        </Panel>
+
+        {/* ── Section 3: Owner Master Controls ── */}
+        {isOwner && (
+          <Panel>
+            <div className="mb-4 font-black text-amber-400">👑 {language === "ar" ? "تحكم المالك — الصوت الرئيسي" : "Owner — Master Sound Control"}</div>
+            <div className="space-y-2">
+              {approvedUsers.filter(u => u.id !== currentUser?.id).map(u => (
+                <div key={u.id} className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                  <div>
+                    <div className="font-bold text-white text-sm">{u.name}</div>
+                    <div className="text-xs text-slate-500">{pair(language, roleLabels[u.role])}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge className={u.soundEnabled ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : "border-red-400/30 bg-red-500/15 text-red-300"}>
+                      {u.soundEnabled ? "🔊" : "🔇"}
+                    </Badge>
+                    {!u.soundEnabled && (
+                      <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => {
+                        const updated = { ...u, soundEnabled: true };
+                        mutate(prev => ({ ...prev, users: prev.users.map(x => x.id === u.id ? updated : x) }));
+                        void saveApprovedUser(updated);
+                        showToast(language === "ar" ? `🔊 تم تفعيل صوت ${u.name}` : `🔊 Sound restored for ${u.name}`, "success");
+                      }}>{language === "ar" ? "إعادة تفعيل" : "Restore"}</Btn>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        )}
+
+        {/* ── Section 4: Security ── */}
+        <Panel>
+          <div className="mb-4 font-black text-amber-400">🔐 {language === "ar" ? "الأمان" : "Security"}</div>
+          <div className="space-y-4">
+            {/* Device ID */}
+            <div>
+              <Lbl>{language === "ar" ? "معرف الجهاز" : "Device ID"}</Lbl>
+              <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                <span className="font-mono text-sm text-amber-400">{deviceId}</span>
+                <span className="text-xs text-slate-500">{language === "ar" ? "(خاص بهذا الجهاز)" : "(device-specific)"}</span>
+              </div>
+            </div>
+
+            {/* Change password */}
+            <div>
+              <Lbl>{language === "ar" ? "تغيير كلمة السر" : "Change Password"}</Lbl>
+              <form onSubmit={handleChangePw} className="space-y-3">
+                <TxtInput type="password" placeholder={language === "ar" ? "كلمة السر الحالية" : "Current password"} value={changePwForm.current} onChange={e => setChangePwForm(p => ({ ...p, current: e.target.value }))} />
+                <TxtInput type="password" placeholder={language === "ar" ? "كلمة السر الجديدة" : "New password (min 6)"} value={changePwForm.newPw} onChange={e => setChangePwForm(p => ({ ...p, newPw: e.target.value }))} />
+                <TxtInput type="password" placeholder={language === "ar" ? "تأكيد كلمة السر" : "Confirm new password"} value={changePwForm.confirm} onChange={e => setChangePwForm(p => ({ ...p, confirm: e.target.value }))} />
+                {changePwError && <div className="text-sm text-red-400">{changePwError}</div>}
+                <Btn type="submit" variant="secondary" className="w-full">{language === "ar" ? "🔑 تغيير كلمة السر" : "🔑 Change Password"}</Btn>
+              </form>
+            </div>
+          </div>
+        </Panel>
+
+        {/* ── Logout ── */}
+        <Panel>
+          <div className="text-sm text-slate-400 mb-4">
+            {language === "ar" ? "تسجيل الخروج لا يحذف البيانات المحفوظة محلياً — ستبقى آمنة حتى تتم مزامنتها." : "Logout preserves locally stored data — it stays safe until synced."}
+          </div>
+          <Btn variant="danger" className="w-full h-14 text-lg" onClick={() => {
+            setCurrentUserId(null);
+            setAuthError(null);
+            setAuthInfo(null);
+            window.localStorage.removeItem(SESSION_KEY);
+            showToast(language === "ar" ? "تم تسجيل الخروج بأمان" : "Logged out safely", "info");
+          }}>
+            🚪 {language === "ar" ? "تسجيل الخروج" : "Logout"}
           </Btn>
-        </div>
-      </Panel>
-    </div>
-  );
+        </Panel>
+      </div>
+    );
+  };
 
   const renderSystem = () => (
     <div className="space-y-6">
-      <SectionHead title={language === "ar" ? "إعدادات النظام" : "System Settings"} />
+      <SectionHead title={language === "ar" ? "إعدادات النظام" : "System Settings"} subtitle={language === "ar" ? "للمالك فقط" : "Owner only"} />
+
       <Panel>
+        <div className="mb-4 font-black text-amber-400">🏢 {language === "ar" ? "معلومات المنظمة" : "Organization Info"}</div>
         <div className="space-y-4">
-          {([["orgName", language === "ar" ? "اسم المنظمة" : "Organization Name"], ["emergencyContact", language === "ar" ? "رقم الطوارئ" : "Emergency Contact"], ["criticalEmail", "Email"], ["criticalSms", "SMS"]] as [keyof typeof snapshot.systemSettings, string][]).map(([key, label]) => (
-            <div key={key}><Lbl>{label}</Lbl>
-              <TxtInput value={String(snapshot.systemSettings[key] ?? "")} onChange={e => mutate(prev => ({ ...prev, systemSettings: { ...prev.systemSettings, [key]: e.target.value } }))} />
-            </div>
-          ))}
+          <div><Lbl>{language === "ar" ? "اسم المنظمة" : "Organization Name"}</Lbl>
+            <TxtInput value={String(snapshot.systemSettings.orgName ?? "")} onChange={e => mutate(prev => ({ ...prev, systemSettings: { ...prev.systemSettings, orgName: e.target.value } }))} />
+          </div>
+          <div><Lbl>{language === "ar" ? "رسالة ترحيب الحراس (عربي)" : "Guard Welcome Message (Arabic)"}</Lbl>
+            <TxtArea rows={2} value={snapshot.systemSettings.welcomeAr} onChange={e => mutate(prev => ({ ...prev, systemSettings: { ...prev.systemSettings, welcomeAr: e.target.value } }))} />
+          </div>
+          <div><Lbl>{language === "ar" ? "رسالة ترحيب الحراس (English)" : "Guard Welcome Message (English)"}</Lbl>
+            <TxtArea rows={2} value={snapshot.systemSettings.welcomeEn} onChange={e => mutate(prev => ({ ...prev, systemSettings: { ...prev.systemSettings, welcomeEn: e.target.value } }))} />
+          </div>
         </div>
       </Panel>
+
+      <Panel>
+        <div className="mb-4 font-black text-amber-400">🚨 {language === "ar" ? "إعدادات الطوارئ" : "Emergency Settings"}</div>
+        <div className="space-y-4">
+          <div><Lbl>{language === "ar" ? "رقم الطوارئ الموحد" : "Emergency Contact Number"}</Lbl>
+            <TxtInput value={snapshot.systemSettings.emergencyContact} onChange={e => mutate(prev => ({ ...prev, systemSettings: { ...prev.systemSettings, emergencyContact: e.target.value } }))} placeholder="999" />
+          </div>
+          <div><Lbl>{language === "ar" ? "بريد التنبيهات الحرجة" : "Critical Alert Email"}</Lbl>
+            <TxtInput type="email" value={snapshot.systemSettings.criticalEmail} onChange={e => mutate(prev => ({ ...prev, systemSettings: { ...prev.systemSettings, criticalEmail: e.target.value } }))} />
+          </div>
+          <div><Lbl>{language === "ar" ? "SMS الطوارئ" : "Emergency SMS Number"}</Lbl>
+            <TxtInput value={snapshot.systemSettings.criticalSms} onChange={e => mutate(prev => ({ ...prev, systemSettings: { ...prev.systemSettings, criticalSms: e.target.value } }))} />
+          </div>
+        </div>
+      </Panel>
+
+      <Panel>
+        <div className="mb-4 font-black text-amber-400">🕐 {language === "ar" ? "إعدادات الزوار" : "Visitor Settings"}</div>
+        <div>
+          <Lbl>{language === "ar" ? "وقت التذكير قبل وصول الزائر (بالدقائق)" : "Visitor reminder time (minutes before arrival)"}</Lbl>
+          <div className="flex items-center gap-3">
+            <TxtInput type="number" className="max-w-[120px]" min="5" max="120" value={snapshot.systemSettings.visitorReminderMinutes} onChange={e => mutate(prev => ({ ...prev, systemSettings: { ...prev.systemSettings, visitorReminderMinutes: Number(e.target.value) } }))} />
+            <span className="text-sm text-slate-400">{language === "ar" ? "دقيقة" : "minutes"}</span>
+          </div>
+        </div>
+      </Panel>
+
+      <Btn className="w-full" onClick={() => showToast(language === "ar" ? "✅ تم حفظ الإعدادات" : "✅ Settings saved", "success")}>
+        💾 {language === "ar" ? "حفظ جميع الإعدادات" : "Save All Settings"}
+      </Btn>
     </div>
   );
 
