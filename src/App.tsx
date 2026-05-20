@@ -46,7 +46,9 @@ const tabLabels: Partial<Record<Tab, Pair>> = {
   shifts: { ar: "النوبات", en: "Shifts" },
   violations: { ar: "المخالفات", en: "Violations" },
   map: { ar: "الخريطة", en: "Map" },
-  sos: { ar: "طوارئ SOS", en: "SOS" },
+  sos: { ar: "طوارئ 🚨", en: "SOS 🚨" },
+  scores: { ar: "التقييمات", en: "Scores" },
+  patrol: { ar: "الجولات", en: "Patrol" },
 };
 
 const reportStatusLabels: Record<ReportStatus, Pair> = {
@@ -535,7 +537,7 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get("tab") as Tab | null;
-    const validTabs: Tab[] = ["reports","alerts","chat","tasks","sos","visitors","users","buildings","dashboard","attendance","analytics","audit","system","settings","violations","scores","patrol"];
+    const validTabs: Tab[] = ["reports","alerts","chat","tasks","sos","visitors","users","buildings","dashboard","attendance","analytics","audit","system","settings","violations","scores","patrol","map"];
     if (tab && validTabs.includes(tab)) {
       setActiveTab(tab);
       window.history.replaceState({}, "", "/");
@@ -1533,53 +1535,102 @@ export default function App() {
 
   const renderSOS = () => (
     <div className="space-y-6">
-      <SectionHead title="SOS" subtitle={language === "ar" ? "زر الطوارئ الفوري" : "Instant Emergency Alert"} />
+      <SectionHead title="SOS" subtitle={language === "ar" ? "زر الطوارئ الفوري" : "Emergency Button"} />
+
+      {/* Stop siren button - always visible if emergency active */}
+      {(emergencyActive || hasActiveEmergency) && (
+        <div className="rounded-2xl border border-red-500/50 bg-red-600/20 p-4 flex flex-wrap items-center gap-4">
+          <span className="text-3xl animate-pulse">🚨</span>
+          <div className="flex-1">
+            <div className="font-black text-red-200 text-lg">{language === "ar" ? "صفارة الإنذار تعمل!" : "Siren is Active!"}</div>
+          </div>
+          <Btn variant="danger" onClick={() => { stopEmergencySound(); setEmergencyActive(false); }}>
+            🔇 {language === "ar" ? "إيقاف الصفارة" : "Stop Siren"}
+          </Btn>
+          {isOwner && (
+            <Btn variant="danger" onClick={() => {
+              stopEmergencySound(); setEmergencyActive(false);
+              const critAlerts = mergedAlerts.filter(a => a.severity === "critical" && (a.status.includes("🔥") || a.status.includes("Fire") || a.status.includes("حريق")));
+              critAlerts.forEach(a => void saveAlert({ ...a, stopped: true } as AlertLog));
+              setStoppedAlertIds(prev => new Set([...prev, ...critAlerts.map(a => a.id)]));
+              navigator.serviceWorker?.controller?.postMessage({ type: "CLEAR_EMERGENCY_NOTIFICATION" });
+              showToast(language === "ar" ? "🔇 تم إيقاف جميع الإنذارات" : "🔇 All alerts stopped", "info");
+            }}>🔇 {language === "ar" ? "إيقاف الكل" : "Stop All"}</Btn>
+          )}
+        </div>
+      )}
+
+      {/* SOS Button - for guards */}
       {isGuard && (
         <Panel>
-          <div className="flex flex-col items-center gap-6 py-8">
+          <div className="flex flex-col items-center gap-6 py-4">
             <div className="text-6xl">🚨</div>
-            <p className="text-center text-slate-300">{language === "ar" ? "اضغط الزر عند وجود خطر فوري. سيتم إرسال موقعك تلقائياً." : "Press in case of immediate danger. Your location will be sent automatically."}</p>
-            <Btn variant="sos" className="h-24 w-64 text-2xl font-black" onClick={() => { void triggerSOS(); }}> 🚨 SOS </Btn>
-            {myShift && (
-              <div className="mt-4 w-full">
-                <Lbl>{language === "ar" ? "ملاحظة إضافية" : "Additional Note"}</Lbl>
-                <TxtArea rows={3} value={endShiftNote} onChange={e => setEndShiftNote(e.target.value)} placeholder={language === "ar" ? "وصف الحادثة..." : "Describe the incident..."} />
-              </div>
+            <p className="text-center text-slate-300 max-w-xs">{language === "ar" ? "اضغط الزر عند وجود خطر فوري. سيتم إرسال موقعك تلقائياً." : "Press the button when in immediate danger. Your location will be sent automatically."}</p>
+            <Btn variant="sos" className="h-24 w-48 text-xl rounded-3xl" onClick={() => {
+              if (!currentUser) return;
+              setSosActive(true);
+              startEmergencySound();
+              setEmergencyActive(true);
+              navigator.geolocation?.getCurrentPosition(pos => {
+                const address = `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
+                const sos: SOSEvent = { id: `sos-${Date.now()}`, guardId: currentUser.id, guardName: currentUser.name, time: nowStamp(), address, resolved: false };
+                const sosAlert: AlertLog = { id: `sos-alert-${Date.now()}`, status: "🚨 SOS EMERGENCY", target: "Everyone", text: `SOS من ${currentUser.name} — ${address}`, sender: currentUser.name, time: nowStamp(), severity: "critical" };
+                mutate(prev => ({ ...prev, sosEvents: [sos, ...prev.sosEvents], alerts: [sosAlert, ...prev.alerts] }));
+                void saveSOSEvent(sos); void saveAlert(sosAlert);
+                void sendPushViaWorker("🚨 SOS EMERGENCY", `${currentUser.name} — ${address}`, "sos");
+                showToast(language === "ar" ? "🚨 تم إرسال SOS" : "🚨 SOS Sent", "danger");
+              }, () => {
+                const sos: SOSEvent = { id: `sos-${Date.now()}`, guardId: currentUser.id, guardName: currentUser.name, time: nowStamp(), address: "Location unavailable", resolved: false };
+                mutate(prev => ({ ...prev, sosEvents: [sos, ...prev.sosEvents] }));
+                void saveSOSEvent(sos);
+                void sendPushViaWorker("🚨 SOS", currentUser.name, "sos");
+                showToast("🚨 SOS Sent", "danger");
+              });
+            }}>SOS 🚨</Btn>
+            {sosActive && (
+              <Btn variant="secondary" onClick={() => { stopEmergencySound(); setEmergencyActive(false); setSosActive(false); showToast(language === "ar" ? "تم إيقاف SOS" : "SOS stopped", "info"); }}>
+                🔇 {language === "ar" ? "إيقاف SOS" : "Stop SOS"}
+              </Btn>
             )}
           </div>
         </Panel>
       )}
+
+      {/* SOS Events log */}
       <Panel>
-        <div className="mb-4 flex items-center justify-between">
-          <div className="font-black text-white">{language === "ar" ? "سجل أحداث SOS" : "SOS Event Log"}</div>
-        </div>
-        {mergedSOSEvents.length === 0 ? <EmptyMsg title={language === "ar" ? "لا أحداث" : "No Events"} text={language === "ar" ? "لم يُسجَّل أي حدث SOS" : "No SOS events recorded"} /> : (
-          <div className="space-y-3">
-            {mergedSOSEvents.map(s => (
-              <div key={s.id} className={`rounded-2xl border p-4 ${s.resolved ? "border-emerald-500/20 bg-emerald-500/5" : "border-red-500/30 bg-red-500/10"}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="font-black text-white">{s.guardName}</div>
-                    <div className="text-sm text-slate-400">{s.time}</div>
-                    {s.address && <div className="mt-1 text-xs text-slate-500">📍 {s.address}</div>}
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <Badge className={s.resolved ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : "border-red-400/30 bg-red-500/15 text-red-300"}>
-                      {s.resolved ? (language === "ar" ? "محلول" : "Resolved") : (language === "ar" ? "نشط" : "Active")}
-                    </Badge>
-                    {!s.resolved && (isOwner || isAdmin) && <Btn variant="secondary" className="text-xs px-3 h-8" onClick={() => resolveSOS(s.id)}>{language === "ar" ? "إغلاق" : "Resolve"}</Btn>}
-                  </div>
+        <div className="mb-3 font-black text-white">{language === "ar" ? "سجل أحداث SOS" : "SOS Events Log"}</div>
+        {mergedSOSEvents.length === 0
+          ? <EmptyMsg title={language === "ar" ? "لا أحداث" : "No SOS Events"} text={language === "ar" ? "لم يُبلَّغ عن أي حوادث" : "No SOS events reported"} />
+          : mergedSOSEvents.map(s => (
+            <div key={s.id} className={`mb-3 rounded-2xl border p-4 ${s.resolved ? "border-emerald-500/10 bg-emerald-500/5" : "border-red-500/30 bg-red-500/10 animate-pulse"}`}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="font-black text-white">{s.guardName}</div>
+                  <div className="text-sm text-slate-400 mt-1">{s.address}</div>
+                  <div className="text-xs text-slate-500">{formatTime(s.time, use24h)}</div>
                 </div>
-                {s.resolvedBy && <div className="mt-2 text-xs text-emerald-400">✅ {language === "ar" ? "أُغلق بواسطة" : "Resolved by"}: {s.resolvedBy}</div>}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <Badge className={s.resolved ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : "border-red-400/30 bg-red-500/15 text-red-300"}>
+                    {s.resolved ? (language === "ar" ? "✅ محلول" : "✅ Resolved") : (language === "ar" ? "🚨 نشط" : "🚨 Active")}
+                  </Badge>
+                  {!s.resolved && (isOwner || isAdmin) && (
+                    <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => {
+                      mutate(prev => ({ ...prev, sosEvents: prev.sosEvents.map(x => x.id === s.id ? { ...x, resolved: true } : x) }));
+                      void updateSOSEventRemote(s.id, { resolved: true });
+                      stopEmergencySound(); setEmergencyActive(false);
+                      showToast(language === "ar" ? "✅ تم حل SOS" : "✅ SOS Resolved", "success");
+                    }}>{language === "ar" ? "حل" : "Resolve"}</Btn>
+                  )}
+                </div>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          ))
+        }
       </Panel>
     </div>
   );
 
-  const renderShifts = () => {
+    const renderShifts = () => {
     const todayStr = today();
     const todayMorning = mergedShifts.filter(s => s.date === todayStr && s.startTime === "04:00" && s.endTime === "16:00");
     const todayEvening = mergedShifts.filter(s => s.date === todayStr && s.startTime === "16:00");
