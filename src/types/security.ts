@@ -148,4 +148,9 @@ export interface PatrolRoute {
   nameAr: string;
   buildingIds: string[];
   createdBy: string;
+  assignedGuardId?: string;
+  assignedGuardName?: string;
+  scheduleTime?: string;   // e.g. "22:00" - time guard should start patrol
+  active: boolean;         // route is active/inactive
+  notes?: string;
 }

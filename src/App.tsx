@@ -320,6 +320,10 @@ export default function App() {
   const [showCreateRoute, setShowCreateRoute] = useState(false);
   const [newRouteName, setNewRouteName] = useState({ ar: "", en: "" });
   const [selectedRouteBuildings, setSelectedRouteBuildings] = useState<string[]>([]);
+  const [editRouteId, setEditRouteId] = useState<string | null>(null);
+  const [newRouteGuardId, setNewRouteGuardId] = useState("");
+  const [newRouteTime, setNewRouteTime] = useState("");
+  const [newRouteNotes, setNewRouteNotes] = useState("");
   const [qrModalBuilding, setQrModalBuilding] = useState<string | null>(null);
   const [stoppedAlertIds, setStoppedAlertIds] = useState<Set<string>>(new Set());
   const [editReportId, setEditReportId] = useState<string | null>(null);
@@ -1907,178 +1911,244 @@ export default function App() {
 
   const renderPatrol = () => (
     <div className="space-y-6">
-      <SectionHead title={language === "ar" ? "جولات الأمن" : "Security Patrols"} subtitle={language === "ar" ? "تتبع جولات الحراس" : "Track guard rounds"} />
+      <SectionHead title={language === "ar" ? "جدول الجولات الأمنية" : "Security Patrol Schedule"} />
 
-      {/* Active patrol for guard */}
+      {/* Guard: my assigned route */}
+      {isGuard && currentUser && (() => {
+        const myRoute = patrolRoutes.find(r => r.assignedGuardId === currentUser.id && r.active);
+        return myRoute ? (
+          <Panel className="border-amber-400/20">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <div className="font-black text-amber-300 text-lg">{language === "ar" ? myRoute.nameAr : myRoute.name}</div>
+                <div className="text-xs text-slate-400 mt-0.5">
+                  {myRoute.scheduleTime && `🕐 ${myRoute.scheduleTime} · `}
+                  {myRoute.buildingIds.length} {language === "ar" ? "نقطة تفتيش" : "checkpoints"}
+                </div>
+                {myRoute.notes && <div className="text-xs text-slate-500 mt-1 italic">{myRoute.notes}</div>}
+              </div>
+              <Btn onClick={() => startPatrol(myRoute)}>
+                🚶 {language === "ar" ? "ابدأ الجولة" : "Start Patrol"}
+              </Btn>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {myRoute.buildingIds.map((bId, i) => {
+                const b = snapshot.buildings.find(x => x.id === bId);
+                return (
+                  <span key={bId} className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                    {i + 1}. {b ? (language === "ar" ? b.nameAr : b.nameEn) : bId}
+                  </span>
+                );
+              })}
+            </div>
+          </Panel>
+        ) : (
+          <Panel>
+            <div className="text-center py-4 text-slate-500">
+              <div className="text-3xl mb-2">🚶</div>
+              <div>{language === "ar" ? "لا يوجد مسار مخصص لك حالياً" : "No patrol route assigned to you yet"}</div>
+            </div>
+          </Panel>
+        );
+      })()}
+
+      {/* Active patrol progress */}
       {isGuard && activePatrol && (
-        <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-5">
+        <Panel className="border-emerald-500/30">
           <div className="mb-3 flex items-center justify-between">
-            <div className="font-black text-amber-300 text-lg">🚶 {language === "ar" ? "جولة نشطة" : "Active Patrol"}</div>
+            <div className="font-black text-emerald-300">🚶 {language === "ar" ? "جولة نشطة" : "Active Patrol"}</div>
             <div className="text-xs text-slate-400">{activePatrol.startedAt}</div>
           </div>
           <div className="space-y-2">
-            {activePatrol.checkpoints.map((cp, i) => (
-              <div key={cp.buildingId} className={`flex items-center gap-3 rounded-2xl border p-3 ${cp.scannedAt ? "border-emerald-500/30 bg-emerald-500/10" : i === activePatrol.checkpoints.findIndex(x => !x.scannedAt) ? "border-amber-400/40 bg-amber-500/10 animate-pulse" : "border-white/10 bg-white/5"}`}>
-                <span className="text-xl flex-shrink-0">{cp.scannedAt ? "✅" : i === activePatrol.checkpoints.findIndex(x => !x.scannedAt) ? "📍" : "⭕"}</span>
-                <div className="flex-1">
-                  <div className="font-bold text-white text-sm">{cp.order}. {cp.buildingName}</div>
-                  {cp.scannedAt && <div className="text-xs text-emerald-400">{cp.scannedAt.split(" ")[1]}</div>}
+            {activePatrol.checkpoints.map((cp, i) => {
+              const isNext = i === activePatrol.checkpoints.findIndex(x => !x.scannedAt);
+              return (
+                <div key={cp.buildingId} className={`flex items-center gap-3 rounded-2xl border p-3 ${cp.scannedAt ? "border-emerald-500/30 bg-emerald-500/10" : isNext ? "border-amber-400/40 bg-amber-500/10" : "border-white/10 bg-white/5"}`}>
+                  <span className="text-xl flex-shrink-0">{cp.scannedAt ? "✅" : isNext ? "📍" : "⭕"}</span>
+                  <div className="flex-1">
+                    <div className="font-bold text-white text-sm">{cp.order}. {cp.buildingName}</div>
+                    {cp.scannedAt && <div className="text-xs text-emerald-400">{cp.scannedAt.split(" ")[1]}</div>}
+                  </div>
+                  {isNext && (
+                    <Btn className="h-8 px-3 text-xs" onClick={() => { setQrContext("patrol"); setQrModalOpen(true); }}>
+                      📷 QR
+                    </Btn>
+                  )}
                 </div>
-                {i === activePatrol.checkpoints.findIndex(x => !x.scannedAt) && (
-                  <Btn className="h-8 px-3 text-xs" onClick={() => { setQrContext("patrol"); setQrModalOpen(true); }}>
-                    📷 {language === "ar" ? "مسح QR" : "Scan QR"}
-                  </Btn>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
-        </div>
-      )}
-
-      {/* Guard: start patrol from a route */}
-      {isGuard && !activePatrol && (
-        <Panel>
-          <div className="mb-3 font-black text-white">{language === "ar" ? "ابدأ جولة" : "Start Patrol"}</div>
-          {patrolRoutes.length === 0
-            ? <div className="text-sm text-slate-500 text-center py-4">{language === "ar" ? "لا مسارات متاحة — اطلب من المالك إنشاء مسار" : "No routes available — ask owner to create a route"}</div>
-            : patrolRoutes.map(r => (
-              <div key={r.id} className="mb-3 flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div>
-                  <div className="font-black text-white">{language === "ar" ? r.nameAr : r.name}</div>
-                  <div className="text-xs text-slate-400">{r.buildingIds.length} {language === "ar" ? "نقاط" : "checkpoints"}</div>
-                </div>
-                <Btn onClick={() => startPatrol(r)}>🚶 {language === "ar" ? "ابدأ" : "Start"}</Btn>
-              </div>
-            ))
-          }
+          <div className="mt-3 text-xs text-slate-500 text-center">
+            {activePatrol.checkpoints.filter(c => c.scannedAt).length}/{activePatrol.checkpoints.length} {language === "ar" ? "نقطة مكتملة" : "completed"}
+          </div>
         </Panel>
       )}
 
-      {/* Owner/Admin: create route */}
-      {(isOwner || isAdmin) && (
+      {/* Other available routes for guard */}
+      {isGuard && !activePatrol && (
         <Panel>
-          <div className="mb-3 flex items-center justify-between">
-            <div className="font-black text-white">{language === "ar" ? "مسارات الجولات" : "Patrol Routes"}</div>
-            <Btn onClick={() => setShowCreateRoute(p => !p)}>
-              {showCreateRoute ? (language === "ar" ? "إلغاء" : "Cancel") : ("+ " + (language === "ar" ? "مسار جديد" : "New Route"))}
-            </Btn>
-          </div>
-
-          {showCreateRoute && (
-            <div className="mb-4 space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div><Lbl>{language === "ar" ? "اسم المسار (عربي)" : "Route Name (Arabic)"}</Lbl><TxtInput value={newRouteName.ar} onChange={e => setNewRouteName(p => ({ ...p, ar: e.target.value }))} /></div>
-              <div><Lbl>{language === "ar" ? "اسم المسار (English)" : "Route Name (English)"}</Lbl><TxtInput value={newRouteName.en} onChange={e => setNewRouteName(p => ({ ...p, en: e.target.value }))} /></div>
-              <div>
-                <Lbl>{language === "ar" ? "اختر المباني (بالترتيب)" : "Select Buildings (in order)"}</Lbl>
-                <div className="max-h-48 overflow-y-auto space-y-1">
-                  {snapshot.buildings.map(b => {
-                    const idx = selectedRouteBuildings.indexOf(b.id);
-                    return (
-                      <button key={b.id} type="button" onClick={() => {
-                        setSelectedRouteBuildings(prev =>
-                          prev.includes(b.id) ? prev.filter(x => x !== b.id) : [...prev, b.id]
-                        );
-                      }} className={`w-full rounded-xl border px-3 py-2 text-sm text-start transition ${idx >= 0 ? "border-amber-400/40 bg-amber-500/10 text-amber-200" : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>
-                        {idx >= 0 && <span className="font-black me-2">{idx + 1}.</span>}
-                        {language === "ar" ? b.nameAr : b.nameEn}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <Btn className="w-full" onClick={() => {
-                if (!newRouteName.ar.trim() || selectedRouteBuildings.length < 2) {
-                  showToast(language === "ar" ? "أدخل الاسم واختر مبنيين على الأقل" : "Enter name and select at least 2 buildings", "danger"); return;
-                }
-                const route: PatrolRoute = { id: `route-${Date.now()}`, name: newRouteName.en.trim() || newRouteName.ar.trim(), nameAr: newRouteName.ar.trim(), buildingIds: selectedRouteBuildings, createdBy: currentUser?.id ?? "" };
-                setPatrolRoutes(prev => [...prev, route]);
-                setNewRouteName({ ar: "", en: "" });
-                setSelectedRouteBuildings([]);
-                setShowCreateRoute(false);
-                showToast(language === "ar" ? "✅ تم إنشاء المسار" : "✅ Route created", "success");
-              }}>{language === "ar" ? "إنشاء المسار" : "Create Route"}</Btn>
-            </div>
-          )}
-
-          {patrolRoutes.length === 0
-            ? <div className="text-sm text-slate-500 text-center py-4">{language === "ar" ? "لا مسارات بعد" : "No routes yet"}</div>
-            : patrolRoutes.map(r => (
+          <div className="mb-3 font-black text-white">{language === "ar" ? "مسارات متاحة" : "Available Routes"}</div>
+          {patrolRoutes.filter(r => r.active).length === 0
+            ? <div className="text-sm text-slate-500 text-center py-2">{language === "ar" ? "لا مسارات نشطة" : "No active routes"}</div>
+            : patrolRoutes.filter(r => r.active).map(r => (
               <div key={r.id} className="mb-2 flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-3">
                 <div>
                   <div className="font-bold text-white">{language === "ar" ? r.nameAr : r.name}</div>
-                  <div className="text-xs text-slate-400">
-                    {r.buildingIds.map(id => snapshot.buildings.find(b => b.id === id)).filter(Boolean).map(b => language === "ar" ? b!.nameAr : b!.nameEn).join(" → ")}
-                  </div>
+                  <div className="text-xs text-slate-400">{r.buildingIds.length} {language === "ar" ? "نقطة" : "points"}{r.scheduleTime ? ` · ${r.scheduleTime}` : ""}</div>
                 </div>
-                <Btn variant="danger" className="h-8 px-3 text-xs" onClick={() => setPatrolRoutes(prev => prev.filter(x => x.id !== r.id))}>حذف</Btn>
+                <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => startPatrol(r)}>▶ {language === "ar" ? "بدء" : "Start"}</Btn>
               </div>
             ))
           }
         </Panel>
       )}
-    </div>
-  );
 
-  const renderMap = () => (
-    <div className="space-y-6">
-      <SectionHead title={language === "ar" ? "خريطة المباني" : "Buildings Map"} />
-
-      {/* Interactive map via OpenStreetMap (free, no API key) */}
-      <Panel>
-        <div className="mb-3 flex items-center justify-between">
-          <div className="font-black text-white">📍 {language === "ar" ? "موقع المجمع — الدوحة، قطر" : "Compound Location — Doha, Qatar"}</div>
-          <a href="https://www.google.com/maps/search/Doha+Qatar" target="_blank" rel="noopener noreferrer"
-            className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-300 hover:bg-amber-500/20 transition">
-            🗺 {language === "ar" ? "فتح Google Maps" : "Open Google Maps"}
-          </a>
-        </div>
-        <div className="overflow-hidden rounded-2xl border border-white/10" style={{ height: 420 }}>
-          <iframe
-            title="Doha Qatar Map"
-            width="100%"
-            height="100%"
-            style={{ border: 0 }}
-            loading="lazy"
-            src="https://www.openstreetmap.org/export/embed.html?bbox=51.48%2C25.25%2C51.56%2C25.32&layer=mapnik&marker=25.2854%2C51.5310"
-            allowFullScreen
-          />
-        </div>
-        <div className="mt-2 text-xs text-slate-500 text-center">
-          {language === "ar" ? "المصدر: OpenStreetMap · مجاني بدون مفتاح API" : "Source: OpenStreetMap · Free, no API key required"}
-        </div>
-      </Panel>
-
-      {/* Buildings list with locations */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {snapshot.buildings.map(b => (
-          <div key={b.id} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition cursor-pointer" onClick={() => setActiveTab("buildings")}>
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-lg">
-              {b.id.includes("gate") ? "🚪" : b.id.includes("cctv") ? "📹" : b.id.includes("store") || b.id.includes("back") ? "📦" : b.id.includes("pump") ? "⚙️" : "🏢"}
+      {/* Owner/Admin: route management table */}
+      {(isOwner || isAdmin) && (
+        <>
+          <Panel>
+            <div className="mb-4 flex items-center justify-between">
+              <div className="font-black text-white">📋 {language === "ar" ? "جدول المسارات الدائم" : "Permanent Route Schedule"}</div>
+              <Btn onClick={() => setShowCreateRoute(p => !p)}>
+                {showCreateRoute ? (language === "ar" ? "إلغاء" : "Cancel") : ("+ " + (language === "ar" ? "مسار جديد" : "New Route"))}
+              </Btn>
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="font-bold text-white text-sm">{language === "ar" ? b.nameAr : b.nameEn}</div>
-              <div className="text-xs text-slate-400">{b.area}</div>
-            </div>
-            <div className="text-xs font-mono text-amber-400">{b.qrCode}</div>
-          </div>
-        ))}
-      </div>
 
-      {/* Quick stats */}
-      <div className="grid gap-3 grid-cols-3">
-        <Panel className="min-h-0 p-4 text-center">
-          <div className="text-2xl font-black text-amber-400">{snapshot.buildings.length}</div>
-          <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "إجمالي المباني" : "Total Buildings"}</div>
-        </Panel>
-        <Panel className="min-h-0 p-4 text-center">
-          <div className="text-2xl font-black text-emerald-400">{guardUsers.filter(u => u.assignedBuildingId).length}</div>
-          <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "مباني مخصصة" : "Assigned"}</div>
-        </Panel>
-        <Panel className="min-h-0 p-4 text-center">
-          <div className="text-2xl font-black text-sky-400">{snapshot.buildings.length - guardUsers.filter(u => u.assignedBuildingId).length}</div>
-          <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "غير مخصصة" : "Unassigned"}</div>
-        </Panel>
-      </div>
+            {/* Create route form */}
+            {showCreateRoute && (
+              <div className="mb-5 rounded-2xl border border-amber-400/20 bg-amber-500/5 p-4 space-y-4">
+                <div className="font-black text-amber-300">{language === "ar" ? "إنشاء مسار جديد" : "Create New Route"}</div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div><Lbl>{language === "ar" ? "اسم المسار (عربي)" : "Name (Arabic)"}</Lbl><TxtInput value={newRouteName.ar} onChange={e => setNewRouteName(p => ({ ...p, ar: e.target.value }))} /></div>
+                  <div><Lbl>{language === "ar" ? "اسم المسار (English)" : "Name (English)"}</Lbl><TxtInput value={newRouteName.en} onChange={e => setNewRouteName(p => ({ ...p, en: e.target.value }))} /></div>
+                  <div><Lbl>{language === "ar" ? "الحارس المخصص" : "Assigned Guard"}</Lbl>
+                    <SelInput value={newRouteGuardId} onChange={e => setNewRouteGuardId(e.target.value)}>
+                      <option value="">{language === "ar" ? "— اختياري —" : "— Optional —"}</option>
+                      {guardUsers.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                    </SelInput>
+                  </div>
+                  <div><Lbl>{language === "ar" ? "وقت الجولة" : "Patrol Time"}</Lbl>
+                    <TxtInput type="time" value={newRouteTime} onChange={e => setNewRouteTime(e.target.value)} placeholder="22:00" />
+                  </div>
+                  <div className="sm:col-span-2"><Lbl>{language === "ar" ? "ملاحظات" : "Notes"}</Lbl>
+                    <TxtInput value={newRouteNotes} onChange={e => setNewRouteNotes(e.target.value)} placeholder={language === "ar" ? "مثال: جولة ليلية..." : "e.g. Night patrol..."} />
+                  </div>
+                </div>
+                <div>
+                  <Lbl>{language === "ar" ? "نقاط التفتيش (بالترتيب)" : "Checkpoints (in order)"}</Lbl>
+                  <div className="max-h-40 overflow-y-auto space-y-1 mt-2">
+                    {snapshot.buildings.map(b => {
+                      const idx = selectedRouteBuildings.indexOf(b.id);
+                      return (
+                        <button key={b.id} type="button" onClick={() => setSelectedRouteBuildings(prev => prev.includes(b.id) ? prev.filter(x => x !== b.id) : [...prev, b.id])}
+                          className={`w-full rounded-xl border px-3 py-2 text-sm text-start transition ${idx >= 0 ? "border-amber-400/40 bg-amber-500/10 text-amber-200" : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>
+                          {idx >= 0 && <span className="font-black me-2">{idx + 1}.</span>}
+                          {language === "ar" ? b.nameAr : b.nameEn}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <Btn className="w-full" onClick={() => {
+                  if (!newRouteName.ar.trim() || selectedRouteBuildings.length < 1) {
+                    showToast(language === "ar" ? "أدخل الاسم واختر نقطة واحدة على الأقل" : "Enter name and select at least 1 checkpoint", "danger"); return;
+                  }
+                  const guard = newRouteGuardId ? guardUsers.find(g => g.id === newRouteGuardId) : undefined;
+                  const route: PatrolRoute = {
+                    id: `route-${Date.now()}`, name: newRouteName.en.trim() || newRouteName.ar.trim(),
+                    nameAr: newRouteName.ar.trim(), buildingIds: selectedRouteBuildings,
+                    createdBy: currentUser?.id ?? "", active: true,
+                    assignedGuardId: guard?.id, assignedGuardName: guard?.name,
+                    scheduleTime: newRouteTime || undefined, notes: newRouteNotes || undefined,
+                  };
+                  setPatrolRoutes(prev => [...prev, route]);
+                  setNewRouteName({ ar: "", en: "" }); setSelectedRouteBuildings([]);
+                  setNewRouteGuardId(""); setNewRouteTime(""); setNewRouteNotes("");
+                  setShowCreateRoute(false);
+                  showToast(language === "ar" ? "✅ تم إنشاء المسار" : "✅ Route created", "success");
+                }}>{language === "ar" ? "✅ إنشاء المسار" : "✅ Create Route"}</Btn>
+              </div>
+            )}
+
+            {/* Routes table */}
+            {patrolRoutes.length === 0
+              ? <div className="text-center py-6 text-slate-500">{language === "ar" ? "لا مسارات بعد — أضف مسارك الأول" : "No routes yet — create your first route"}</div>
+              : <div className="space-y-3">
+                  {patrolRoutes.map(r => {
+                    const guard = r.assignedGuardId ? guardUsers.find(g => g.id === r.assignedGuardId) : null;
+                    const isEditing = editRouteId === r.id;
+                    return (
+                      <div key={r.id} className={`rounded-2xl border p-4 ${r.active ? "border-white/10 bg-white/5" : "border-white/5 bg-white/3 opacity-60"}`}>
+                        {isEditing ? (
+                          <div className="space-y-3">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <div><Lbl>{language === "ar" ? "الاسم (عربي)" : "Name (AR)"}</Lbl><TxtInput defaultValue={r.nameAr} id={`edit-name-ar-${r.id}`} /></div>
+                              <div><Lbl>{language === "ar" ? "الاسم (EN)" : "Name (EN)"}</Lbl><TxtInput defaultValue={r.name} id={`edit-name-en-${r.id}`} /></div>
+                              <div><Lbl>{language === "ar" ? "الحارس المخصص" : "Assigned Guard"}</Lbl>
+                                <SelInput defaultValue={r.assignedGuardId ?? ""} id={`edit-guard-${r.id}`}>
+                                  <option value="">{language === "ar" ? "— بدون تخصيص —" : "— Unassigned —"}</option>
+                                  {guardUsers.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                                </SelInput>
+                              </div>
+                              <div><Lbl>{language === "ar" ? "وقت الجولة" : "Patrol Time"}</Lbl>
+                                <TxtInput type="time" defaultValue={r.scheduleTime ?? ""} id={`edit-time-${r.id}`} />
+                              </div>
+                              <div className="sm:col-span-2"><Lbl>{language === "ar" ? "ملاحظات" : "Notes"}</Lbl>
+                                <TxtInput defaultValue={r.notes ?? ""} id={`edit-notes-${r.id}`} />
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <Btn className="flex-1" onClick={() => {
+                                const nameAr = (document.getElementById(`edit-name-ar-${r.id}`) as HTMLInputElement)?.value || r.nameAr;
+                                const nameEn = (document.getElementById(`edit-name-en-${r.id}`) as HTMLInputElement)?.value || r.name;
+                                const guardId = (document.getElementById(`edit-guard-${r.id}`) as HTMLSelectElement)?.value;
+                                const time = (document.getElementById(`edit-time-${r.id}`) as HTMLInputElement)?.value;
+                                const notes = (document.getElementById(`edit-notes-${r.id}`) as HTMLInputElement)?.value;
+                                const guard = guardId ? guardUsers.find(g => g.id === guardId) : undefined;
+                                setPatrolRoutes(prev => prev.map(x => x.id === r.id ? { ...x, nameAr, name: nameEn, assignedGuardId: guard?.id, assignedGuardName: guard?.name, scheduleTime: time || undefined, notes: notes || undefined } : x));
+                                setEditRouteId(null);
+                                showToast(language === "ar" ? "✅ تم التحديث" : "✅ Updated", "success");
+                              }}>{language === "ar" ? "💾 حفظ" : "💾 Save"}</Btn>
+                              <Btn variant="secondary" onClick={() => setEditRouteId(null)}>{language === "ar" ? "إلغاء" : "Cancel"}</Btn>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <div className="font-black text-white">{language === "ar" ? r.nameAr : r.name}</div>
+                                {!r.active && <Badge className="border-slate-400/30 bg-slate-500/15 text-slate-400 text-xs">{language === "ar" ? "معطّل" : "Inactive"}</Badge>}
+                              </div>
+                              <div className="mt-1 flex flex-wrap gap-3 text-xs text-slate-400">
+                                {guard && <span>👮 {guard.name}</span>}
+                                {r.scheduleTime && <span>🕐 {r.scheduleTime}</span>}
+                                <span>📍 {r.buildingIds.length} {language === "ar" ? "نقطة" : "pts"}</span>
+                                {r.notes && <span className="italic">{r.notes}</span>}
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {r.buildingIds.map((bId, i) => {
+                                  const b = snapshot.buildings.find(x => x.id === bId);
+                                  return <span key={bId} className="rounded-lg border border-white/10 px-2 py-0.5 text-xs text-slate-400">{i+1}. {b ? (language === "ar" ? b.nameAr : b.nameEn) : bId}</span>;
+                                })}
+                              </div>
+                            </div>
+                            <div className="flex gap-2 flex-shrink-0">
+                              <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => setEditRouteId(r.id)}>✏️ {language === "ar" ? "تعديل" : "Edit"}</Btn>
+                              <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => { setPatrolRoutes(prev => prev.map(x => x.id === r.id ? { ...x, active: !x.active } : x)); showToast(r.active ? (language === "ar" ? "تم إيقاف المسار" : "Route deactivated") : (language === "ar" ? "تم تفعيل المسار" : "Route activated"), "info"); }}>
+                                {r.active ? (language === "ar" ? "إيقاف" : "Disable") : (language === "ar" ? "تفعيل" : "Enable")}
+                              </Btn>
+                              <Btn variant="danger" className="h-8 px-3 text-xs" onClick={() => { setPatrolRoutes(prev => prev.filter(x => x.id !== r.id)); showToast(language === "ar" ? "تم الحذف" : "Deleted", "info"); }}>🗑</Btn>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+            }
+          </Panel>
+        </>
+      )}
     </div>
   );
 
