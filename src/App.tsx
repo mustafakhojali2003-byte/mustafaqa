@@ -875,59 +875,328 @@ export default function App() {
   };
 
   // ─── Render Sections ──────────────────────────────────────────────────────────
-  const renderDashboard = () => (
-    <div className="space-y-6">
-      <SectionHead title={language === "ar" ? "لوحة التحكم" : "Dashboard"} subtitle={APP_NAME} />
-      {insights.length > 0 && (
-        <div className="space-y-3">
-          {insights.map((ins, i) => (
-            <div key={i} className={`rounded-2xl border p-4 text-sm font-semibold ${ins.type === "critical" ? "border-red-500/30 bg-red-500/10 text-red-200" : ins.type === "warning" ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : "border-sky-500/30 bg-sky-500/10 text-sky-200"}`}>
-              <div className="font-black">{language === "ar" ? ins.titleAr : ins.title}</div>
-              <div className="mt-1 opacity-80">{language === "ar" ? ins.bodyAr : ins.body}</div>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label={language === "ar" ? "إجمالي الحراس" : "Total Guards"} value={guardUsers.length} />
-        <StatCard label={language === "ar" ? "التقارير الحرجة" : "Critical Reports"} value={mergedReports.filter(r => r.status === "critical").length} color="text-red-300" />
-        <StatCard label={language === "ar" ? "أحداث SOS" : "SOS Events"} value={mergedSOSEvents.filter(s => !s.resolved).length} color="text-red-400" />
-        <StatCard label={language === "ar" ? "زوار اليوم" : "Today Visitors"} value={mergedVisitors.filter(v => v.arrivalDate === today()).length} color="text-amber-300" />
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label={language === "ar" ? "نوبات اليوم" : "Today Shifts"} value={mergedShifts.filter(s => s.date === today()).length} />
-        <StatCard label={language === "ar" ? "مخالفات مفتوحة" : "Open Violations"} value={mergedViolations.filter(v => !v.acknowledged).length} color="text-amber-300" />
-        <StatCard label={language === "ar" ? "تقارير تحذير" : "Warning Reports"} value={mergedReports.filter(r => r.status === "warning").length} color="text-amber-300" />
-        <StatCard label={language === "ar" ? "إجمالي التقارير" : "Total Reports"} value={mergedReports.length} />
-      </div>
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Panel>
-          <div className="mb-3 font-black text-white">{language === "ar" ? "آخر التقارير" : "Latest Reports"}</div>
-          {mergedReports.slice(0, 4).map(r => (
-            <div key={r.id} className="mb-2 flex items-start gap-3 rounded-xl bg-white/5 p-3">
-              <Badge className={getStatusBadgeClass(r.status)}>{r.status}</Badge>
-              <div><div className="text-sm font-bold text-white">{r.senderName}</div><div className="text-xs text-slate-400">{r.text.slice(0, 60)}…</div></div>
-            </div>
-          ))}
-        </Panel>
-        <Panel>
-          <div className="mb-3 font-black text-white">{language === "ar" ? "آخر أحداث SOS" : "Latest SOS"}</div>
-          {mergedSOSEvents.length === 0 ? <EmptyMsg title={language === "ar" ? "لا أحداث" : "No SOS"} text={language === "ar" ? "لم يُبلَّغ عن أي حوادث" : "No SOS events reported"} /> : mergedSOSEvents.slice(0, 4).map(s => (
-            <div key={s.id} className={`mb-2 rounded-xl p-3 ${s.resolved ? "bg-emerald-500/10" : "bg-red-500/10"}`}>
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-white">{s.guardName}</span>
-                <Badge className={s.resolved ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : "border-red-400/30 bg-red-500/15 text-red-300"}>{s.resolved ? (language === "ar" ? "محلول" : "Resolved") : (language === "ar" ? "نشط" : "Active")}</Badge>
+  const renderDashboard = () => {
+    const todayStr = today();
+    const todayReports = mergedReports.filter(r => r.time.startsWith(todayStr));
+    const next24hVisitors = mergedVisitors.filter(v => v.arrivalDate === todayStr && v.status === "scheduled");
+    const onlineGuards = guardUsers.filter(u => activeUserIds.includes(u.id));
+    const hasEmergency = mergedAlerts.some(a => a.severity === "critical") || mergedSOSEvents.some(s => !s.resolved);
+
+    // Guard-specific simplified dashboard
+    if (isGuard && currentUser) {
+      const myTasks = mergedTasks.filter(t => t.assignedTo === currentUser.id && t.status !== "done");
+      const myTodayReports = mergedReports.filter(r => r.senderId === currentUser.id && r.time.startsWith(todayStr));
+      const myShiftToday = mergedShifts.find(s => s.guardId === currentUser.id && s.date === todayStr);
+      const welcome = language === "ar" ? snapshot.systemSettings.welcomeAr : snapshot.systemSettings.welcomeEn;
+      return (
+        <div className="space-y-5">
+          {/* Welcome */}
+          <Panel className="border-amber-400/20">
+            <div className="flex items-center gap-4">
+              <div className="text-4xl">👮</div>
+              <div>
+                <div className="text-xl font-black text-white">{language === "ar" ? `مرحباً ${currentUser.name}` : `Welcome, ${currentUser.name}`}</div>
+                <div className="text-sm text-slate-400 mt-1">{welcome}</div>
               </div>
-              <div className="text-xs text-slate-400">{s.address} · {s.time}</div>
             </div>
-          ))}
+          </Panel>
+
+          {/* Quick stats */}
+          <div className="grid gap-3 grid-cols-3">
+            <Panel className="min-h-0 p-4 text-center">
+              <div className="text-2xl font-black text-amber-400">{myTasks.length}</div>
+              <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "مهام معلقة" : "Pending Tasks"}</div>
+            </Panel>
+            <Panel className="min-h-0 p-4 text-center">
+              <div className="text-2xl font-black text-sky-400">{myTodayReports.length}</div>
+              <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "تقارير اليوم" : "Today Reports"}</div>
+            </Panel>
+            <Panel className="min-h-0 p-4 text-center">
+              <div className={`text-2xl font-black ${myShiftToday ? "text-emerald-400" : "text-slate-500"}`}>{myShiftToday ? "✅" : "—"}</div>
+              <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "نوبة اليوم" : "Shift Today"}</div>
+            </Panel>
+          </div>
+
+          {/* My pending tasks */}
+          {myTasks.length > 0 && (
+            <Panel>
+              <div className="mb-3 font-black text-white">📋 {language === "ar" ? "مهامي المعلقة" : "My Pending Tasks"}</div>
+              <div className="space-y-2">
+                {myTasks.slice(0, 5).map(t => (
+                  <div key={t.id} className={`rounded-2xl border p-3 ${t.priority === "high" ? "border-red-500/20 bg-red-500/5" : "border-white/10 bg-white/5"}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="font-bold text-white text-sm">{t.title}</div>
+                        {t.dueDate && <div className="text-xs text-slate-400">{language === "ar" ? "الاستحقاق:" : "Due:"} {t.dueDate}</div>}
+                      </div>
+                      <Badge className={t.priority === "high" ? "border-red-400/30 bg-red-500/15 text-red-300" : t.priority === "medium" ? "border-amber-400/30 bg-amber-500/15 text-amber-300" : "border-slate-400/30 bg-slate-500/15 text-slate-300"}>{t.priority}</Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Btn variant="secondary" className="mt-3 w-full" onClick={() => setActiveTab("tasks")}>{language === "ar" ? "عرض جميع المهام" : "View All Tasks"}</Btn>
+            </Panel>
+          )}
+
+          {/* Quick actions */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Btn className="h-16 text-base" onClick={() => setActiveTab("reports")}>📝 {language === "ar" ? "رفع تقرير" : "Submit Report"}</Btn>
+            <Btn variant="sos" className="h-16 text-base" onClick={() => setActiveTab("sos")}>🚨 SOS</Btn>
+            <Btn variant="secondary" className="h-14" onClick={() => setActiveTab("attendance")}>📷 {language === "ar" ? "تسجيل الحضور" : "Clock In"}</Btn>
+            <Btn variant="secondary" className="h-14" onClick={() => setActiveTab("chat")}>💬 {language === "ar" ? "الدردشة" : "Chat"}</Btn>
+          </div>
+        </div>
+      );
+    }
+
+    // Owner / Admin dashboard
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <SectionHead title={language === "ar" ? "مركز العمليات الأمنية" : "Security Operations Center"} subtitle={APP_NAME} />
+          <Btn variant="secondary" onClick={() => { try { exportFullDashboardPDF(snapshot, APP_NAME); showToast(language === "ar" ? "تم تصدير PDF" : "PDF exported"); } catch { showToast("PDF failed", "danger"); } }}>📄 PDF</Btn>
+        </div>
+
+        {/* ── Emergency active banner ── */}
+        {hasEmergency && (
+          <div className="rounded-2xl border border-red-500/50 bg-red-600/20 p-4 animate-pulse flex items-center gap-4">
+            <span className="text-3xl">🚨</span>
+            <div className="flex-1">
+              <div className="font-black text-red-200 text-lg">{language === "ar" ? "وضع الطوارئ نشط" : "Emergency Mode Active"}</div>
+              <div className="text-sm text-red-300">{language === "ar" ? "صفارة الإنذار تعمل — تحقق من لوحة SOS فوراً" : "Siren is active — check SOS panel immediately"}</div>
+            </div>
+            {emergencyActive && (
+              <Btn variant="danger" onClick={() => { stopEmergencySound(); setEmergencyActive(false); }}>🔇 {language === "ar" ? "إيقاف الصفارة" : "Stop Siren"}</Btn>
+            )}
+          </div>
+        )}
+
+        {/* ── AI Insights ── */}
+        {insights.some(i => i.type !== "info") && (
+          <div className="space-y-2">
+            {insights.filter(i => i.type !== "info").map((ins, i) => (
+              <div key={i} className={`rounded-2xl border px-4 py-3 text-sm flex items-start gap-3 ${ins.type === "critical" ? "border-red-500/30 bg-red-500/10" : "border-amber-500/30 bg-amber-500/10"}`}>
+                <span className="text-lg flex-shrink-0">{ins.type === "critical" ? "🚨" : "⚠️"}</span>
+                <div>
+                  <div className="font-black text-white">{language === "ar" ? ins.titleAr : ins.title}</div>
+                  <div className="text-slate-300 mt-0.5">{language === "ar" ? ins.bodyAr : ins.body}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Summary Cards ── */}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Guards online */}
+          <Panel className={`min-h-0 cursor-pointer hover:border-emerald-400/30 transition ${onlineGuards.length > 0 ? "border-emerald-500/20" : ""}`} onClick={() => setActiveTab("users")}>
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-3xl font-black text-emerald-400">{onlineGuards.length}<span className="text-slate-500 text-lg font-normal">/{guardUsers.length}</span></div>
+                <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "حراس متصلون / إجمالي" : "Guards Online / Total"}</div>
+              </div>
+              <span className="text-2xl">👮</span>
+            </div>
+            {onlineGuards.length > 0 && <div className="mt-2 text-xs text-emerald-400">● {language === "ar" ? "نشط الآن" : "Active now"}</div>}
+          </Panel>
+
+          {/* Today reports */}
+          <Panel className="min-h-0 cursor-pointer hover:border-sky-400/30 transition" onClick={() => setActiveTab("reports")}>
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-3xl font-black text-sky-400">{todayReports.length}</div>
+                <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "تقارير اليوم" : "Today's Reports"}</div>
+              </div>
+              <span className="text-2xl">📋</span>
+            </div>
+            {todayReports.filter(r => r.status === "critical").length > 0 && (
+              <div className="mt-2 text-xs text-red-400">🚨 {todayReports.filter(r => r.status === "critical").length} {language === "ar" ? "حرج" : "critical"}</div>
+            )}
+          </Panel>
+
+          {/* Today visitors */}
+          <Panel className="min-h-0 cursor-pointer hover:border-amber-400/30 transition" onClick={() => setActiveTab("visitors")}>
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-3xl font-black text-amber-400">{next24hVisitors.length}</div>
+                <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "زوار مجدولون اليوم" : "Scheduled Visitors Today"}</div>
+              </div>
+              <span className="text-2xl">🎫</span>
+            </div>
+          </Panel>
+
+          {/* Pending accounts (owner only) / Open violations (admin) */}
+          {isOwner ? (
+            <Panel className={`min-h-0 cursor-pointer transition ${pendingUsers.length > 0 ? "border-amber-500/40 bg-amber-500/5 hover:border-amber-400/60 animate-pulse" : "hover:border-white/20"}`} onClick={() => setActiveTab("users")}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className={`text-3xl font-black ${pendingUsers.length > 0 ? "text-amber-400" : "text-slate-500"}`}>{pendingUsers.length}</div>
+                  <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "طلبات حسابات معلقة" : "Pending Account Requests"}</div>
+                </div>
+                <span className="text-2xl">⏳</span>
+              </div>
+              {pendingUsers.length > 0 && <div className="mt-2 text-xs text-amber-400">{language === "ar" ? "تحتاج موافقتك" : "Awaiting your approval"}</div>}
+            </Panel>
+          ) : (
+            <Panel className="min-h-0 cursor-pointer hover:border-white/20 transition" onClick={() => setActiveTab("violations")}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-3xl font-black text-amber-400">{mergedViolations.filter(v => !v.acknowledged).length}</div>
+                  <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "مخالفات مفتوحة" : "Open Violations"}</div>
+                </div>
+                <span className="text-2xl">⚠️</span>
+              </div>
+            </Panel>
+          )}
+        </div>
+
+        {/* ── Secondary stats ── */}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Panel className="min-h-0 p-4 cursor-pointer hover:border-white/20" onClick={() => setActiveTab("shifts")}>
+            <div className="text-2xl font-black text-white">{mergedShifts.filter(s => s.date === todayStr).length}</div>
+            <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "نوبات اليوم" : "Today Shifts"}</div>
+          </Panel>
+          <Panel className="min-h-0 p-4 cursor-pointer hover:border-white/20" onClick={() => setActiveTab("alerts")}>
+            <div className="text-2xl font-black text-red-400">{mergedSOSEvents.filter(s => !s.resolved).length}</div>
+            <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "SOS نشط" : "Active SOS"}</div>
+          </Panel>
+          <Panel className="min-h-0 p-4 cursor-pointer hover:border-white/20" onClick={() => setActiveTab("reports")}>
+            <div className="text-2xl font-black text-amber-400">{mergedReports.filter(r => r.status === "warning").length}</div>
+            <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "تحذيرات" : "Warnings"}</div>
+          </Panel>
+          <Panel className="min-h-0 p-4 cursor-pointer hover:border-white/20" onClick={() => setActiveTab("reports")}>
+            <div className="text-2xl font-black text-red-300">{mergedReports.filter(r => r.status === "critical").length}</div>
+            <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "تقارير حرجة" : "Critical Reports"}</div>
+          </Panel>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-3">
+          {/* ── Live users (owner only) ── */}
+          {isOwner && (
+            <Panel>
+              <div className="mb-3 flex items-center justify-between">
+                <div className="font-black text-white">{language === "ar" ? "المتصلون الآن" : "Online Now"}</div>
+                <Badge className="border-emerald-400/30 bg-emerald-500/15 text-emerald-300">{activeUserIds.length}</Badge>
+              </div>
+              {activeUserIds.length === 0
+                ? <div className="text-sm text-slate-500 text-center py-4">{language === "ar" ? "لا أحد متصل" : "No one online"}</div>
+                : approvedUsers.filter(u => activeUserIds.includes(u.id)).map(u => (
+                  <div key={u.id} className="mb-2 flex items-center gap-3 rounded-2xl border border-emerald-500/10 bg-emerald-500/5 px-3 py-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-white text-sm truncate">{u.name}</div>
+                      <div className="text-xs text-slate-400">{pair(language, roleLabels[u.role])}</div>
+                    </div>
+                    <Badge className={getRoleBadgeClass(u.role)} >{u.role === "owner" ? "👑" : u.role === "admin" ? "🛡️" : "👮"}</Badge>
+                  </div>
+                ))
+              }
+            </Panel>
+          )}
+
+          {/* ── Latest reports ── */}
+          <Panel className={isOwner ? "" : "lg:col-span-2"}>
+            <div className="mb-3 flex items-center justify-between">
+              <div className="font-black text-white">{language === "ar" ? "آخر التقارير" : "Latest Reports"}</div>
+              <Btn variant="secondary" className="h-7 px-3 text-xs" onClick={() => setActiveTab("reports")}>{language === "ar" ? "عرض الكل" : "View All"}</Btn>
+            </div>
+            {mergedReports.length === 0
+              ? <EmptyMsg title={language === "ar" ? "لا تقارير" : "No Reports"} text="" />
+              : mergedReports.slice(0, 5).map(r => (
+                <div key={r.id} className={`mb-2 rounded-2xl border p-3 ${r.status === "critical" ? "border-red-500/20 bg-red-500/5" : r.status === "warning" ? "border-amber-500/20 bg-amber-500/5" : "border-white/10 bg-white/5"}`}>
+                  <div className="flex items-start gap-3">
+                    <Badge className={getStatusBadgeClass(r.status)}>{r.status}</Badge>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold text-white">{r.senderName} <span className="text-slate-500 font-normal">· {formatBuilding(snapshot.buildings.find(b => b.id === r.buildingId), language)}</span></div>
+                      <div className="text-xs text-slate-400 truncate">{r.text}</div>
+                      <div className="text-xs text-slate-600 mt-0.5">{r.time}</div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            }
+          </Panel>
+
+          {/* ── Latest SOS ── */}
+          <Panel>
+            <div className="mb-3 flex items-center justify-between">
+              <div className="font-black text-white">{language === "ar" ? "آخر أحداث SOS" : "Latest SOS"}</div>
+              <Btn variant="secondary" className="h-7 px-3 text-xs" onClick={() => setActiveTab("sos")}>{language === "ar" ? "عرض الكل" : "View All"}</Btn>
+            </div>
+            {mergedSOSEvents.length === 0
+              ? <EmptyMsg title={language === "ar" ? "لا أحداث" : "No SOS"} text="" />
+              : mergedSOSEvents.slice(0, 4).map(s => (
+                <div key={s.id} className={`mb-2 rounded-2xl border p-3 ${s.resolved ? "border-emerald-500/10 bg-emerald-500/5" : "border-red-500/30 bg-red-500/10 animate-pulse"}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="font-bold text-white text-sm">{s.guardName}</div>
+                      <div className="text-xs text-slate-400">{s.time}</div>
+                    </div>
+                    <Badge className={s.resolved ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : "border-red-400/30 bg-red-500/15 text-red-300"}>
+                      {s.resolved ? "✅" : "🚨"}
+                    </Badge>
+                  </div>
+                </div>
+              ))
+            }
+          </Panel>
+        </div>
+
+        {/* ── Alert distribution chart ── */}
+        <Panel>
+          <div className="mb-4 font-black text-white">{language === "ar" ? "توزيع التنبيهات والتقارير" : "Alert & Report Distribution"}</div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* Reports breakdown */}
+            <div>
+              <div className="text-xs text-slate-400 mb-3">{language === "ar" ? "التقارير حسب الحالة" : "Reports by Status"}</div>
+              {(["normal","warning","critical"] as const).map(s => {
+                const count = mergedReports.filter(r => r.status === s).length;
+                const pct = mergedReports.length > 0 ? Math.round((count / mergedReports.length) * 100) : 0;
+                return (
+                  <div key={s} className="mb-2">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-slate-300">{pair(language, { ar: s === "normal" ? "طبيعي" : s === "warning" ? "تحذير" : "حرج", en: s.charAt(0).toUpperCase() + s.slice(1) })}</span>
+                      <span className="text-slate-400">{count} ({pct}%)</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-white/10">
+                      <div className={`h-2 rounded-full transition-all ${s === "critical" ? "bg-red-500" : s === "warning" ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Guard performance */}
+            <div>
+              <div className="text-xs text-slate-400 mb-3">{language === "ar" ? "أداء الحراس (التقارير)" : "Guard Performance (Reports)"}</div>
+              {guardUsers.slice(0, 5).map(g => {
+                const gReports = mergedReports.filter(r => r.senderId === g.id).length;
+                const max = Math.max(...guardUsers.map(u => mergedReports.filter(r => r.senderId === u.id).length), 1);
+                return (
+                  <div key={g.id} className="mb-2">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-slate-300 truncate max-w-[120px]">{g.name}</span>
+                      <span className="text-slate-400">{gReports} {language === "ar" ? "تقرير" : "reports"}</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-white/10">
+                      <div className="h-2 rounded-full bg-sky-500 transition-all" style={{ width: `${Math.round((gReports / max) * 100)}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </Panel>
+
+        {/* ── Quick actions ── */}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {isOwner && <Btn onClick={() => setActiveTab("users")} variant="secondary" className="h-12">{language === "ar" ? "👥 إدارة المستخدمين" : "👥 Manage Users"}</Btn>}
+          <Btn onClick={() => setActiveTab("alerts")} variant="secondary" className="h-12">{language === "ar" ? "🚨 إرسال إنذار" : "🚨 Send Alert"}</Btn>
+          <Btn onClick={() => setActiveTab("visitors")} variant="secondary" className="h-12">{language === "ar" ? "🎫 إضافة زائر" : "🎫 Add Visitor"}</Btn>
+          <Btn onClick={() => setActiveTab("shifts")} variant="secondary" className="h-12">{language === "ar" ? "📅 النوبات" : "📅 Shifts"}</Btn>
+        </div>
       </div>
-      <div className="flex flex-wrap gap-3">
-        <Btn variant="secondary" onClick={() => { try { exportFullDashboardPDF(snapshot, APP_NAME); showToast(language === "ar" ? "تم تصدير PDF" : "PDF exported"); } catch { showToast("PDF failed", "danger"); } }}>📄 {language === "ar" ? "تصدير PDF" : "Export PDF"}</Btn>
-      </div>
-    </div>
-  );
+    );
+  };
 
   const renderSOS = () => (
     <div className="space-y-6">
