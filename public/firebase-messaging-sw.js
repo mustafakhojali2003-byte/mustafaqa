@@ -12,6 +12,13 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+// Tab mapping for deep links
+const TAB_MAP = {
+  report: "reports", chat: "chat", task: "tasks",
+  emergency: "sos", sos: "sos", alert: "alerts",
+  visitor: "visitors", pending_user: "users",
+};
+
 messaging.onBackgroundMessage((payload) => {
   const { title, body } = payload.notification || {};
   const data = payload.data || {};
@@ -19,33 +26,51 @@ messaging.onBackgroundMessage((payload) => {
   const isEmergency = type === "emergency" || type === "sos";
   const isChat = type === "chat";
   const isTask = type === "task";
+  const isReport = type === "report";
+  const isVisitor = type === "visitor";
 
-  const options = {
+  // Unique tag per message for chat (no grouping), group for others
+  const tag = isChat || isReport
+    ? `qa-${type}-${Date.now()}`
+    : isEmergency ? "qa-emergency" : `qa-${type}`;
+
+  const actions = isEmergency
+    ? [{ action: "stop_siren", title: "🔇 إيقاف الصفارة" }, { action: "view", title: "📱 فتح" }]
+    : isChat
+    ? [{ action: "reply", title: "💬 فتح الدردشة" }]
+    : isReport
+    ? [{ action: "view_report", title: "📋 عرض التقرير" }]
+    : isTask
+    ? [{ action: "view_task", title: "✅ عرض المهمة" }]
+    : isVisitor
+    ? [{ action: "view_visitor", title: "🎫 عرض الزائر" }]
+    : [{ action: "view", title: "📱 فتح" }];
+
+  self.registration.showNotification(title || "MUSTAFA.QA", {
     body: body || "",
     icon: "/logo.svg",
     badge: "/logo.svg",
-    tag: isEmergency ? "qa-emergency" : `qa-${type}-${Date.now()}`,
-    requireInteraction: isEmergency || isChat,
+    tag,
+    requireInteraction: isEmergency || isChat || isReport,
     renotify: true,
-    vibrate: isEmergency ? [500,200,500,200,500] : isChat ? [300,100,300] : [200,100,200],
-    data: { url: "/", type },
     silent: false,
-    actions: isEmergency
-      ? [{ action: "stop_siren", title: "🔇 إيقاف الصفارة" }, { action: "view", title: "📱 فتح" }]
-      : isChat
-      ? [{ action: "view", title: "💬 الرد" }]
-      : isTask
-      ? [{ action: "view", title: "📋 عرض المهمة" }]
-      : [{ action: "view", title: "📱 فتح التطبيق" }],
-  };
-
-  self.registration.showNotification(title || "MUSTAFA.QA", options);
+    vibrate: isEmergency
+      ? [500, 200, 500, 200, 500]
+      : isChat || isReport
+      ? [300, 100, 300, 100, 300]
+      : [200, 100, 200],
+    timestamp: Date.now(),
+    data: { type, tab: TAB_MAP[type] || "reports" },
+    actions,
+  });
 });
 
+// Handle notification click → open app at correct tab
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const action = event.action;
-  const type = event.notification.data?.type;
+  const notifType = event.notification.data?.type;
+  const tab = event.notification.data?.tab || "reports";
 
   if (action === "stop_siren") {
     event.waitUntil(
@@ -56,16 +81,48 @@ self.addEventListener("notificationclick", (event) => {
     return;
   }
 
-  const targetUrl = type === "chat" ? "/#chat" : type === "task" ? "/#tasks" : type === "sos" ? "/#sos" : "/";
+  // For all other actions → open app and navigate to tab
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      // If app already open → focus and navigate
       for (const client of clients) {
         if ("focus" in client) {
-          client.postMessage({ type: "NOTIFICATION_CLICKED", notifType: type });
+          client.postMessage({ type: "NOTIFICATION_CLICKED", notifType, tab });
           return client.focus();
         }
       }
-      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
+      // If app closed → open it
+      const url = `https://mustafaqa.vercel.app/?tab=${tab}`;
+      if (self.clients.openWindow) return self.clients.openWindow(url);
     })
   );
+});
+
+// Show notification from app (when foreground)
+self.addEventListener("message", async (event) => {
+  const data = event.data;
+  if (!data) return;
+
+  if (data.type === "SHOW_NOTIFICATION") {
+    const p = data.payload || {};
+    const isEmergency = p.tag === "qa-emergency" || p.requireInteraction;
+    await self.registration.showNotification(p.title || "MUSTAFA.QA", {
+      body: p.body || "",
+      tag: p.tag || `qa-${Date.now()}`,
+      requireInteraction: !!p.requireInteraction,
+      renotify: isEmergency,
+      icon: "/logo.svg",
+      badge: "/logo.svg",
+      vibrate: isEmergency ? [500, 200, 500, 200, 500] : [200, 100, 200],
+      data: { type: p.notifType || "info", tab: TAB_MAP[p.notifType] || "reports" },
+      actions: isEmergency
+        ? [{ action: "stop_siren", title: "🔇 إيقاف الصفارة" }, { action: "view", title: "📱 فتح" }]
+        : [{ action: "view", title: "📱 فتح" }],
+    });
+  }
+
+  if (data.type === "CLEAR_EMERGENCY_NOTIFICATION") {
+    const notifications = await self.registration.getNotifications({ tag: "qa-emergency" });
+    notifications.forEach(n => n.close());
+  }
 });

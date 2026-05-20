@@ -456,6 +456,18 @@ export default function App() {
     document.title = `${APP_NAME} | ${language === "ar" ? "نظام الأمن المتكامل" : "Integrated Security System"}`;
   }, [language]);
 
+  // Handle deep link from notification click (when app was closed)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab") as Tab | null;
+    const validTabs: Tab[] = ["reports","alerts","chat","tasks","sos","visitors","shifts","users","buildings","dashboard","attendance","analytics","audit","system","settings","violations","map"];
+    if (tab && validTabs.includes(tab)) {
+      setActiveTab(tab);
+      // Clean URL without reload
+      window.history.replaceState({}, "", "/");
+    }
+  }, []);
+
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
     window.localStorage.setItem(LANGUAGE_KEY, language);
@@ -469,14 +481,21 @@ export default function App() {
     if ("Notification" in window) setNotificationPermission(Notification.permission);
     void registerNotificationServiceWorker();
 
-    // Listen for messages from service worker (e.g. stop siren from notification button)
+    // Listen for messages from service worker
     const handleSWMessage = (event: MessageEvent) => {
       if (event.data?.type === "STOP_SIREN_FROM_NOTIFICATION") {
         stopEmergencySound();
         setEmergencyActive(false);
       }
-      if (event.data?.type === "NOTIFICATION_CLICKED" && event.data?.emergency) {
-        setActiveTab("sos");
+      if (event.data?.type === "NOTIFICATION_CLICKED") {
+        const t = event.data?.notifType;
+        if (t === "chat") setActiveTab("chat");
+        else if (t === "task") setActiveTab("tasks");
+        else if (t === "sos" || t === "emergency") setActiveTab("sos");
+        else if (t === "report") setActiveTab("reports");
+        else if (t === "alert") setActiveTab("alerts");
+        else if (t === "pending_user") setActiveTab("users");
+        else if (t === "visitor") setActiveTab("visitors");
       }
     };
     navigator.serviceWorker?.addEventListener("message", handleSWMessage);
@@ -788,10 +807,17 @@ export default function App() {
     void saveReport(report);
     mutate(prev => ({ ...prev, reports: [report, ...prev.reports] }), language === "ar" ? "✅ تم إرسال التقرير" : "✅ Report sent");
     pushSync("report");
-    // Push new report to owner & admins
-    const emoji = report.status === "critical" ? "🚨" : report.status === "warning" ? "⚠️" : "📋";
+    // Push new report to owner & admins with full content
+    const rEmoji = report.status === "critical" ? "🚨" : report.status === "warning" ? "⚠️" : "📋";
+    const rBuilding = snapshot.buildings.find(b => b.id === report.buildingId);
+    const rBuildingName = rBuilding ? (language === "ar" ? rBuilding.nameAr : rBuilding.nameEn) : "";
     approvedUsers.filter(u => u.role === "owner" || u.role === "admin").forEach(u => {
-      void sendPushViaWorker(`${emoji} تقرير جديد`, `${currentUser?.name}: ${report.text.slice(0, 80)}`, "report", u.id);
+      void sendPushViaWorker(
+        `${rEmoji} ${currentUser?.name} — ${rBuildingName}`,
+        report.text.slice(0, 200),
+        "report",
+        u.id
+      );
     });
     setReportForm(prev => ({ ...prev, text: "", status: "normal", mediaUrl: "", mediaKind: "", fileName: "" }));
     setReportScannedBuilding("");
@@ -844,6 +870,15 @@ export default function App() {
     mutate(prev => ({ ...prev, visitors: [fullVisitor, ...prev.visitors], alerts: [visitorAlert, ...prev.alerts] }), language === "ar" ? "تمت إضافة الزائر" : "Visitor added");
     void saveVisitor(fullVisitor);
     void saveAlert(visitorAlert);
+    // Push visitor notification to all guards
+    guardUsers.forEach(g => {
+      void sendPushViaWorker(
+        `🎫 ${language === "ar" ? "زائر جديد" : "New Visitor"} — ${visitor.guestName}`,
+        `${visitor.company} · ${visitor.arrivalDate} ${visitor.arrivalTime} · ${language === "ar" ? "رمز الدخول" : "Pass"}: ${fullVisitor.passCode}`,
+        "visitor",
+        g.id
+      );
+    });
     setVisitorModalOpen(false);
   };
 
