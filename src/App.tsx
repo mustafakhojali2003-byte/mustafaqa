@@ -73,6 +73,28 @@ function hashPassword(value: string): string {
   for (let i = 0; i < value.length; i++) hash = (hash * 33) ^ value.charCodeAt(i);
   return `h${(hash >>> 0).toString(16)}`;
 }
+function formatTime(dateStr: string, use24h: boolean): string {
+  try {
+    const d = new Date(dateStr.replace(" ", "T"));
+    if (isNaN(d.getTime())) return dateStr;
+    const date = d.toLocaleDateString("ar-SA", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const time = d.toLocaleTimeString(use24h ? "en-GB" : "en-US", {
+      hour: "2-digit", minute: "2-digit", hour12: !use24h,
+    });
+    return `${date} · ${time}`;
+  } catch { return dateStr; }
+}
+
+function formatTimeOnly(dateStr: string, use24h: boolean): string {
+  try {
+    const d = new Date(dateStr.replace(" ", "T"));
+    if (isNaN(d.getTime())) return dateStr.split(" ")[1] ?? dateStr;
+    return d.toLocaleTimeString(use24h ? "en-GB" : "en-US", {
+      hour: "2-digit", minute: "2-digit", hour12: !use24h,
+    });
+  } catch { return dateStr.split(" ")[1] ?? dateStr; }
+}
+
 function nowStamp(): string {
   const now = new Date();
   return `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, "0")}-${`${now.getDate()}`.padStart(2, "0")} ${`${now.getHours()}`.padStart(2, "0")}:${`${now.getMinutes()}`.padStart(2, "0")}`;
@@ -295,6 +317,9 @@ export default function App() {
   const [editUserId, setEditUserId] = useState<string | null>(null);
   const [editUserForm, setEditUserForm] = useState({ name: "", phone: "", buildingId: "", role: "guard" as Role });
   const [changePwForm, setChangePwForm] = useState({ current: "", newPw: "", confirm: "" });
+  const [use24h, setUse24h] = useState<boolean>(() => {
+    try { return window.localStorage.getItem("mustafaqa-24h") === "true"; } catch { return false; }
+  });
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [changePwError, setChangePwError] = useState("");
   const deviceId = typeof window !== "undefined" ? (window.localStorage.getItem("mustafaqa-device-id") || (() => { const id = "DEV-" + Math.random().toString(36).slice(2,8).toUpperCase(); window.localStorage.setItem("mustafaqa-device-id", id); return id; })()) : "—";
@@ -2486,7 +2511,7 @@ export default function App() {
                       <p className="mt-1 text-sm text-slate-300">{a.text}</p>
                       <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
                         <span>👤 {a.sender}</span>
-                        <span>🕐 {a.time}</span>
+                        <span>🕐 {formatTime(a.time, use24h)}</span>
                         <span>📍 {a.target}</span>
                       </div>
                     </div>
@@ -2697,12 +2722,12 @@ export default function App() {
                 </div>
                 <div className="text-end text-xs flex-shrink-0 min-w-[110px]">
                   <div className="text-emerald-400 font-mono">
-                    🟢 {a.time.split(" ")[1] ?? a.time}
+                    🟢 {formatTime(a.time, use24h)}
                   </div>
                   {a.checkOut ? (
                     <>
                       <div className="text-red-400 font-mono mt-0.5">
-                        🔴 {a.checkOut.split(" ")[1]}
+                        🔴 {formatTimeOnly(a.checkOut, use24h)}
                       </div>
                       {dur && <div className="text-amber-400 font-bold mt-0.5">⏱ {dur}</div>}
                     </>
@@ -2944,7 +2969,7 @@ export default function App() {
                                 <div className="flex flex-wrap items-center gap-2">
                                   <Badge className={getStatusBadgeClass(r.status)}>{r.status}</Badge>
                                   <span className="font-bold text-white text-sm">{r.senderName}</span>
-                                  <span className="text-xs text-slate-400">{r.time}</span>
+                                  <span className="text-xs text-slate-400">{formatTime(r.time, use24h)}</span>
                                 </div>
                                 {(isOwner || isAdmin) && (
                                   <div className="mt-1 text-xs text-slate-500">{r.senderEmail} · {r.senderPhone}</div>
@@ -3151,6 +3176,27 @@ export default function App() {
                 </button>
                 <span className="text-sm text-slate-400">{currentUser?.soundEnabled ? (language === "ar" ? "مفعّل" : "Enabled") : (language === "ar" ? "مكتوم" : "Muted")}</span>
                 {!currentUser?.soundEnabled && <span className="text-xs text-amber-400">⚠️ {language === "ar" ? "لن تسمع إشعارات الطوارئ!" : "You won't hear emergency alerts!"}</span>}
+              </div>
+            </div>
+
+            {/* Time format */}
+            <div>
+              <Lbl>{language === "ar" ? "تنسيق الوقت" : "Time Format"}</Lbl>
+              <div className="flex gap-2">
+                <Btn variant={!use24h ? "primary" : "secondary"} onClick={() => {
+                  setUse24h(false);
+                  window.localStorage.setItem("mustafaqa-24h", "false");
+                  showToast(language === "ar" ? "توقيت 12 ساعة" : "12-hour format", "info");
+                }}>🕐 12h {language === "ar" ? "(ص/م)" : "(AM/PM)"}</Btn>
+                <Btn variant={use24h ? "primary" : "secondary"} onClick={() => {
+                  setUse24h(true);
+                  window.localStorage.setItem("mustafaqa-24h", "true");
+                  showToast(language === "ar" ? "توقيت 24 ساعة" : "24-hour format", "info");
+                }}>🕐 24h</Btn>
+              </div>
+              <div className="mt-2 text-xs text-slate-500">
+                {language === "ar" ? "مثال: " : "Example: "}
+                <span className="font-mono text-amber-400">{formatTime(nowStamp(), use24h)}</span>
               </div>
             </div>
 
