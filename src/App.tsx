@@ -7,6 +7,7 @@ import { deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, sa
 import { exportReportsPDF, exportShiftReportPDF, exportFullDashboardPDF } from "./services/pdfService";
 import { generateVisitorQR, generateBuildingQR } from "./services/qrService";
 import { analyzeData } from "./services/analyticsService";
+import { initFCM, listenForegroundMessages } from "./services/fcmService";
 import { validateEmail } from "./services/emailVerification";
 import type { AlertLog, AppSnapshot, AttendanceRecord, AuditEntry, AuditSeverity, Building, ChatMessage, Conversation, Language, NewAccountPayload, Pair, Report, ReportStatus, Role, Shift, SOSEvent, Tab, Task, Toast, ToastTone, User, Violation, VisitorFormPayload, VisitorRecord } from "./types/security";
 
@@ -492,7 +493,22 @@ export default function App() {
   useEffect(() => {
     if (!currentUserId) return;
     setActiveUserIds(prev => Array.from(new Set([...prev.filter(id => id !== currentUserId), currentUserId])));
-    return () => setActiveUserIds(prev => prev.filter(id => id !== currentUserId));
+
+    // Initialize FCM for push notifications (works even when app is closed)
+    void initFCM(currentUserId);
+
+    // Listen to foreground FCM messages
+    const unsubFCM = listenForegroundMessages((title, body, type) => {
+      const isCritical = type === "emergency" || type === "sos";
+      showToast(`${title}: ${body}`, isCritical ? "danger" : "info");
+      if (isCritical) { startEmergencySound(); setEmergencyActive(true); vibrateEmergency(); }
+      else { playNormalAlertSound(true); vibrateDevice(); }
+    });
+
+    return () => {
+      setActiveUserIds(prev => prev.filter(id => id !== currentUserId));
+      unsubFCM();
+    };
   }, [currentUserId]);
 
   // ─── Sync Firebase → snapshot (so all devices see same data) ──────────────
