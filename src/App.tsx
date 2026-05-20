@@ -2695,14 +2695,20 @@ export default function App() {
                     {formatBuilding(snapshot.buildings.find(b => b.id === a.buildingId), language)}
                   </div>
                 </div>
-                <div className="text-right text-xs flex-shrink-0">
-                  <div className="text-slate-300">
-                    {language === "ar" ? "دخول:" : "In:"} {a.time.split(" ")[1] ?? a.time}
+                <div className="text-end text-xs flex-shrink-0 min-w-[110px]">
+                  <div className="text-emerald-400 font-mono">
+                    🟢 {a.time.split(" ")[1] ?? a.time}
                   </div>
-                  {a.checkOut && (
-                    <div className="text-slate-400">
-                      {language === "ar" ? "خروج:" : "Out:"} {a.checkOut.split(" ")[1]}
-                      {dur && <span className="text-amber-400 ms-1">· {dur}</span>}
+                  {a.checkOut ? (
+                    <>
+                      <div className="text-red-400 font-mono mt-0.5">
+                        🔴 {a.checkOut.split(" ")[1]}
+                      </div>
+                      {dur && <div className="text-amber-400 font-bold mt-0.5">⏱ {dur}</div>}
+                    </>
+                  ) : (
+                    <div className="text-emerald-300 text-xs mt-0.5 animate-pulse">
+                      {language === "ar" ? "● نشط الآن" : "● Active"}
                     </div>
                   )}
                   <Badge className={a.method === "qr" ? "border-sky-400/30 bg-sky-500/15 text-sky-300 mt-1" : "border-slate-400/30 bg-slate-500/15 text-slate-400 mt-1"}>
