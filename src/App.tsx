@@ -1935,7 +1935,61 @@ export default function App() {
     </div>
   );
 
-  const renderAnalytics = () => (
+  const renderMap = () => (
+    <div className="space-y-6">
+      <SectionHead title={language === "ar" ? "خريطة المباني" : "Buildings Map"} />
+
+      {/* Interactive map via Google Maps embed */}
+      <Panel>
+        <div className="mb-3 font-black text-white">📍 {language === "ar" ? "موقع المجمع" : "Compound Location"}</div>
+        <div className="overflow-hidden rounded-2xl border border-white/10" style={{ height: 400 }}>
+          <iframe
+            title="map"
+            width="100%"
+            height="100%"
+            style={{ border: 0 }}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            src="https://www.google.com/maps/embed/v1/place?key=AIzaSyD-9tSrke72PouQMnMX-a7eZSW0jkFMBWY&q=Doha,Qatar&zoom=14"
+          />
+        </div>
+      </Panel>
+
+      {/* Buildings list with locations */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {snapshot.buildings.map(b => (
+          <div key={b.id} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition cursor-pointer" onClick={() => setActiveTab("buildings")}>
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-lg">
+              {b.id.includes("gate") ? "🚪" : b.id.includes("cctv") ? "📹" : b.id.includes("store") || b.id.includes("back") ? "📦" : b.id.includes("pump") ? "⚙️" : "🏢"}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-bold text-white text-sm">{language === "ar" ? b.nameAr : b.nameEn}</div>
+              <div className="text-xs text-slate-400">{b.area}</div>
+            </div>
+            <div className="text-xs font-mono text-amber-400">{b.qrCode}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Quick stats */}
+      <div className="grid gap-3 grid-cols-3">
+        <Panel className="min-h-0 p-4 text-center">
+          <div className="text-2xl font-black text-amber-400">{snapshot.buildings.length}</div>
+          <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "إجمالي المباني" : "Total Buildings"}</div>
+        </Panel>
+        <Panel className="min-h-0 p-4 text-center">
+          <div className="text-2xl font-black text-emerald-400">{guardUsers.filter(u => u.assignedBuildingId).length}</div>
+          <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "مباني مخصصة" : "Assigned"}</div>
+        </Panel>
+        <Panel className="min-h-0 p-4 text-center">
+          <div className="text-2xl font-black text-sky-400">{snapshot.buildings.length - guardUsers.filter(u => u.assignedBuildingId).length}</div>
+          <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "غير مخصصة" : "Unassigned"}</div>
+        </Panel>
+      </div>
+    </div>
+  );
+
+    const renderAnalytics = () => (
     <div className="space-y-6">
       <SectionHead title={language === "ar" ? "التحليلات الذكية" : "Smart Analytics"} />
       <Panel>
