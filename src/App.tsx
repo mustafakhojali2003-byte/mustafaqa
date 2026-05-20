@@ -121,13 +121,29 @@ function loadJson<T>(key: string, fallback: T): T {
 
 function buildSeedBuildings(): Building[] {
   return ([
-    ["gate-1", "البوابة 1", "GATE 1", "Gate Zone", "QA-GATE-1", 25.2854, 51.5310],
-    ["gate-2", "البوابة 2", "GATE 2", "Gate Zone", "QA-GATE-2", 25.2860, 51.5315],
-    ["reception", "الاستقبال", "RECEPTION", "Front Desk", "QA-REC", 25.2858, 51.5312],
-    ["building-2", "المبني 2", "BUILDING 2", "Building Zone", "QA-B2", 25.2856, 51.5318],
-    ["building-3", "المبني 3", "BUILDING 3", "Building Zone", "QA-B3", 25.2862, 51.5320],
-    ["cctv-room", "غرفة الكاميرات", "CCTV ROOM", "Control Room", "QA-CCTV", 25.2850, 51.5308],
-  ] as [string, string, string, string, string, number, number][]).map(([id, nameAr, nameEn, area, qrCode, lat, lng]) => ({ id, nameAr, nameEn, area, qrCode, lat, lng }));
+    ["gate-1",      "البوابة 1",         "GATE 1",      "Gate Zone",    "QA-GATE-1"],
+    ["gate-2",      "البوابة 2",         "GATE 2",      "Gate Zone",    "QA-GATE-2"],
+    ["reception",   "الاستقبال",          "RECEPTION",   "Front Desk",   "QA-REC"],
+    ["building-2",  "المبنى 2",           "BUILDING 2",  "Building Zone","QA-B2"],
+    ["building-3",  "المبنى 3",           "BUILDING 3",  "Building Zone","QA-B3"],
+    ["building-4",  "المبنى 4",           "BUILDING 4",  "Building Zone","QA-B4"],
+    ["building-5",  "المبنى 5",           "BUILDING 5",  "Building Zone","QA-B5"],
+    ["building-6",  "المبنى 6",           "BUILDING 6",  "Building Zone","QA-B6"],
+    ["building-7",  "المبنى 7",           "BUILDING 7",  "Building Zone","QA-B7"],
+    ["building-8",  "المبنى 8",           "BUILDING 8",  "Building Zone","QA-B8"],
+    ["building-9",  "المبنى 9",           "BUILDING 9",  "Building Zone","QA-B9"],
+    ["building-10", "المبنى 10",          "BUILDING 10", "Building Zone","QA-B10"],
+    ["building-11", "المبنى 11",          "BUILDING 11", "Building Zone","QA-B11"],
+    ["building-12", "المبنى 12",          "BUILDING 12", "Building Zone","QA-B12"],
+    ["store-1",     "المخزن 1",           "STORE 1",     "Storage Zone", "QA-ST1"],
+    ["store-2",     "المخزن 2",           "STORE 2",     "Storage Zone", "QA-ST2"],
+    ["pump-room",   "غرفة المضخة",        "PUMP ROOM",   "Utility Zone", "QA-PUMP"],
+    ["back-s1",     "المخزن الخلفي 1",    "BACK S1",     "Back Storage", "QA-BS1"],
+    ["back-s2",     "المخزن الخلفي 2",    "BACK S2",     "Back Storage", "QA-BS2"],
+    ["back-s3",     "المخزن الخلفي 3",    "BACK S3",     "Back Storage", "QA-BS3"],
+    ["back-s4",     "المخزن الخلفي 4",    "BACK S4",     "Back Storage", "QA-BS4"],
+    ["cctv-room",   "غرفة الكاميرات",     "CCTV ROOM",   "Control Room", "QA-CCTV"],
+  ] as [string,string,string,string,string][]).map(([id,nameAr,nameEn,area,qrCode]) => ({ id, nameAr, nameEn, area, qrCode }));
 }
 
 function buildSeedState(): AppSnapshot {
@@ -261,6 +277,9 @@ export default function App() {
   const [chatInput, setChatInput] = useState("");
   const [chatMediaUploading, setChatMediaUploading] = useState(false);
   const [selectedBuildingId, setSelectedBuildingId] = useState<string | null>(null);
+  const [buildingSearch, setBuildingSearch] = useState("");
+  const [showAddBuilding, setShowAddBuilding] = useState(false);
+  const [addBuildingForm, setAddBuildingForm] = useState({ nameAr: "", nameEn: "", area: "" });
   const chatFileRef = useRef<HTMLInputElement | null>(null);
   const [visitorQrMap, setVisitorQrMap] = useState<Record<string, string>>({});
   const [shiftFilter, setShiftFilter] = useState<"all" | "today">("today");
@@ -1664,78 +1683,252 @@ export default function App() {
     </div>
   );
 
-  const renderBuildings = () => {
-    const building = selectedBuildingId ? snapshot.buildings.find(b => b.id === selectedBuildingId) : null;
-    const buildingReports = building
-      ? mergedReports.filter(r => r.buildingId === building.id && (isGuard ? r.senderId === currentUser?.id : true))
-      : [];
+  const addBuilding = (e: FormEvent) => {
+    e.preventDefault();
+    if (!addBuildingForm.nameEn.trim() || !addBuildingForm.nameAr.trim()) return;
+    const id = addBuildingForm.nameEn.trim().toLowerCase().replace(/\s+/g, "-");
+    const qrCode = "QA-" + addBuildingForm.nameEn.trim().toUpperCase().replace(/\s+/g, "").slice(0, 8);
+    const newBuilding: Building = { id, nameAr: addBuildingForm.nameAr.trim(), nameEn: addBuildingForm.nameEn.trim(), area: addBuildingForm.area.trim() || "General Zone", qrCode };
+    mutate(prev => ({ ...prev, buildings: [...prev.buildings, newBuilding] }), language === "ar" ? "تمت إضافة المبنى" : "Building added");
+    setAddBuildingForm({ nameAr: "", nameEn: "", area: "" });
+    setShowAddBuilding(false);
+  };
 
-    if (building) return (
-      <div className="space-y-6">
-        <div className="flex items-center gap-3">
-          <Btn variant="secondary" onClick={() => setSelectedBuildingId(null)}>← {language === "ar" ? "رجوع" : "Back"}</Btn>
-          <SectionHead title={language === "ar" ? building.nameAr : building.nameEn} subtitle={building.area} />
-        </div>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <StatCard label={language === "ar" ? "إجمالي التقارير" : "Total Reports"} value={buildingReports.length} />
-          <StatCard label={language === "ar" ? "حرجة" : "Critical"} value={buildingReports.filter(r => r.status === "critical").length} color="text-red-300" />
-          <StatCard label={language === "ar" ? "تحذير" : "Warning"} value={buildingReports.filter(r => r.status === "warning").length} color="text-amber-300" />
-        </div>
-        {buildingReports.length === 0
-          ? <EmptyMsg title={language === "ar" ? "لا تقارير" : "No Reports"} text="" />
-          : buildingReports.map(r => (
-            <Panel key={r.id}>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge className={getStatusBadgeClass(r.status)}>{r.status}</Badge>
-                    <span className="font-black text-white">{r.senderName}</span>
-                    <span className="text-xs text-slate-400">{r.time}</span>
-                  </div>
-                  {(isOwner || isAdmin) && (
-                    <div className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
-                      <InfoRow label={language === "ar" ? "البريد" : "Email"} value={r.senderEmail} />
-                      <InfoRow label={language === "ar" ? "الهاتف" : "Phone"} value={r.senderPhone} />
-                    </div>
-                  )}
-                  <p className="mt-2 text-sm text-slate-300">{r.text}</p>
-                  {r.mediaUrl && r.mediaKind === "image" && <img src={r.mediaUrl} alt="media" className="mt-3 max-h-48 rounded-xl object-cover" />}
-                </div>
-              </div>
-            </Panel>
-          ))
-        }
-      </div>
-    );
+  const deleteBuilding = (buildingId: string) => {
+    if (!currentUser) return;
+    // Safely unassign guards from deleted building
+    mutate(prev => ({
+      ...prev,
+      buildings: prev.buildings.filter(b => b.id !== buildingId),
+      users: prev.users.map(u => u.assignedBuildingId === buildingId ? { ...u, assignedBuildingId: undefined } : u),
+    }), language === "ar" ? "تم حذف المبنى" : "Building deleted");
+    if (selectedBuildingId === buildingId) setSelectedBuildingId(null);
+  };
+
+  const renderBuildings = () => {
+    const filteredBuildings = buildingSearch.trim()
+      ? snapshot.buildings.filter(b =>
+          b.nameAr.includes(buildingSearch) ||
+          b.nameEn.toLowerCase().includes(buildingSearch.toLowerCase())
+        )
+      : snapshot.buildings;
+
+    const selectedBuilding = selectedBuildingId ? snapshot.buildings.find(b => b.id === selectedBuildingId) : null;
+    const buildingReports = selectedBuilding
+      ? mergedReports.filter(r => r.buildingId === selectedBuilding.id && (isGuard ? r.senderId === currentUser?.id : true))
+      : [];
+    const buildingVisitors = selectedBuilding
+      ? mergedVisitors.filter(v => v.buildingId === selectedBuilding.id)
+      : [];
+    const assignedGuard = selectedBuilding ? approvedUsers.find(u => u.assignedBuildingId === selectedBuilding.id) : null;
 
     return (
-      <div className="space-y-6">
-        <SectionHead title={language === "ar" ? "المباني" : "Buildings"} />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {snapshot.buildings.map(b => {
-            const guard = approvedUsers.find(u => u.assignedBuildingId === b.id);
-            const bReports = mergedReports.filter(r => r.buildingId === b.id);
-            const criticals = bReports.filter(r => r.status === "critical").length;
-            return (
-              <Panel key={b.id} className="cursor-pointer hover:border-amber-400/30 transition" onClick={() => setSelectedBuildingId(b.id)}>
-                <div className="mb-3 flex items-center justify-between">
-                  <div className="font-black text-amber-400">{language === "ar" ? b.nameAr : b.nameEn}</div>
-                  <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={async e => {
-                    e.stopPropagation();
-                    const qr = await generateBuildingQR(b.id, b.nameEn).catch(() => "");
-                    if (qr) { const a = document.createElement("a"); a.href = qr; a.download = `qr-${b.id}.png`; a.click(); showToast(language === "ar" ? "تم تنزيل QR" : "QR Downloaded"); }
-                  }}>QR ⬇</Btn>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <SectionHead title={language === "ar" ? "المباني" : "Buildings"} subtitle={`${snapshot.buildings.length} ${language === "ar" ? "موقع" : "locations"}`} />
+          {isOwner && (
+            <Btn onClick={() => setShowAddBuilding(p => !p)}>
+              {showAddBuilding ? (language === "ar" ? "إلغاء" : "Cancel") : ("+ " + (language === "ar" ? "إضافة مبنى" : "Add Building"))}
+            </Btn>
+          )}
+        </div>
+
+        {/* Add building form - owner only */}
+        {isOwner && showAddBuilding && (
+          <Panel>
+            <div className="mb-3 font-black text-white">{language === "ar" ? "إضافة مبنى جديد" : "Add New Building"}</div>
+            <form onSubmit={addBuilding} className="grid gap-4 sm:grid-cols-3">
+              <div><Lbl>{language === "ar" ? "الاسم بالعربي" : "Arabic Name"}</Lbl><TxtInput required value={addBuildingForm.nameAr} onChange={e => setAddBuildingForm(p => ({ ...p, nameAr: e.target.value }))} placeholder="المبنى الجديد" /></div>
+              <div><Lbl>{language === "ar" ? "الاسم بالإنجليزي" : "English Name"}</Lbl><TxtInput required value={addBuildingForm.nameEn} onChange={e => setAddBuildingForm(p => ({ ...p, nameEn: e.target.value }))} placeholder="NEW BUILDING" /></div>
+              <div><Lbl>{language === "ar" ? "المنطقة" : "Area"}</Lbl><TxtInput value={addBuildingForm.area} onChange={e => setAddBuildingForm(p => ({ ...p, area: e.target.value }))} placeholder="Zone" /></div>
+              <div className="sm:col-span-3"><Btn type="submit" className="w-full">{language === "ar" ? "إضافة" : "Add"}</Btn></div>
+            </form>
+          </Panel>
+        )}
+
+        {/* Search */}
+        <TxtInput
+          placeholder={language === "ar" ? "🔍 بحث بالاسم العربي أو الإنجليزي..." : "🔍 Search by name..."}
+          value={buildingSearch}
+          onChange={e => setBuildingSearch(e.target.value)}
+          className="max-w-sm"
+        />
+
+        {/* Main layout: sidebar + detail */}
+        <div className="flex flex-col gap-4 lg:flex-row">
+
+          {/* Building list sidebar */}
+          <div className="lg:w-72 lg:flex-shrink-0">
+            <div className="max-h-[70vh] overflow-y-auto space-y-1 rounded-[24px] border border-white/10 bg-[#0b132b]/90 p-3">
+              {filteredBuildings.length === 0
+                ? <div className="p-4 text-center text-sm text-slate-500">{language === "ar" ? "لا نتائج" : "No results"}</div>
+                : filteredBuildings.map(b => {
+                    const bReports = mergedReports.filter(r => r.buildingId === b.id);
+                    const criticals = bReports.filter(r => r.status === "critical").length;
+                    const isActive = selectedBuildingId === b.id;
+                    return (
+                      <button key={b.id} onClick={() => setSelectedBuildingId(b.id)}
+                        className={`w-full rounded-2xl p-3 text-start transition ${isActive ? "border border-amber-400/40 bg-amber-500/10" : "border border-transparent hover:bg-white/5"}`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`font-bold text-sm ${isActive ? "text-amber-300" : "text-white"}`}>
+                            {language === "ar" ? b.nameAr : b.nameEn}
+                          </span>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            {criticals > 0 && <span className="text-xs text-red-400">🚨{criticals}</span>}
+                            {bReports.length > 0 && <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-xs text-slate-400">{bReports.length}</span>}
+                          </div>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5">{b.area}</div>
+                      </button>
+                    );
+                  })
+              }
+            </div>
+          </div>
+
+          {/* Detail panel */}
+          <div className="flex-1">
+            {!selectedBuilding ? (
+              <div className="flex h-64 items-center justify-center rounded-[24px] border border-dashed border-white/10 bg-white/5 text-slate-500">
+                <div className="text-center">
+                  <div className="text-4xl mb-2">🏢</div>
+                  <div>{language === "ar" ? "اختر مبنى من القائمة" : "Select a building from the list"}</div>
                 </div>
-                <div className="text-sm text-slate-400">{b.area}</div>
-                {guard && <div className="mt-2 text-sm text-emerald-400">👮 {guard.name}</div>}
-                <div className="mt-2 flex gap-2">
-                  <Badge className="border-slate-400/30 bg-slate-500/15 text-slate-300">{bReports.length} {language === "ar" ? "تقرير" : "reports"}</Badge>
-                  {criticals > 0 && <Badge className="border-red-400/30 bg-red-500/15 text-red-300">🚨 {criticals} {language === "ar" ? "حرج" : "critical"}</Badge>}
+              </div>
+            ) : (
+              <div className="space-y-4">
+
+                {/* Building header */}
+                <Panel>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-2xl font-black text-amber-400">{language === "ar" ? selectedBuilding.nameAr : selectedBuilding.nameEn}</div>
+                      <div className="text-sm text-slate-400 mt-1">{selectedBuilding.area}</div>
+                      {assignedGuard && <div className="mt-2 text-sm text-emerald-400">👮 {language === "ar" ? "الحارس المخصص:" : "Assigned Guard:"} {assignedGuard.name}</div>}
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 font-mono text-sm font-bold text-amber-300">
+                        {selectedBuilding.qrCode}
+                      </div>
+                      {!isGuard && (
+                        <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={async () => {
+                          const qr = await generateBuildingQR(selectedBuilding.id, selectedBuilding.nameEn).catch(() => "");
+                          if (qr) { const a = document.createElement("a"); a.href = qr; a.download = `qr-${selectedBuilding.id}.png`; a.click(); showToast(language === "ar" ? "تم تنزيل QR" : "QR Downloaded"); }
+                        }}>⬇ QR</Btn>
+                      )}
+                      {isOwner && (
+                        <Btn variant="danger" className="h-8 px-3 text-xs" onClick={() => {
+                          if (confirm(language === "ar" ? "تأكيد حذف المبنى؟" : "Delete this building?")) deleteBuilding(selectedBuilding.id);
+                        }}>{language === "ar" ? "حذف" : "Delete"}</Btn>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Owner: reassign guard */}
+                  {isOwner && (
+                    <div className="mt-4 border-t border-white/10 pt-4">
+                      <Lbl>{language === "ar" ? "إسناد حارس لهذا المبنى" : "Assign Guard to this Building"}</Lbl>
+                      <SelInput className="max-w-xs" value={assignedGuard?.id ?? ""} onChange={e => {
+                        const guardId = e.target.value;
+                        mutate(prev => ({
+                          ...prev,
+                          users: prev.users.map(u => {
+                            if (u.id === guardId) return { ...u, assignedBuildingId: selectedBuilding.id };
+                            if (u.assignedBuildingId === selectedBuilding.id) return { ...u, assignedBuildingId: undefined };
+                            return u;
+                          }),
+                        }), language === "ar" ? "تم تحديث الإسناد" : "Assignment updated");
+                        if (guardId) {
+                          const g = approvedUsers.find(u => u.id === guardId);
+                          if (g) void saveApprovedUser({ ...g, assignedBuildingId: selectedBuilding.id });
+                        }
+                        if (assignedGuard) void saveApprovedUser({ ...assignedGuard, assignedBuildingId: undefined });
+                      }}>
+                        <option value="">{language === "ar" ? "— بدون حارس —" : "— No guard —"}</option>
+                        {guardUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </SelInput>
+                    </div>
+                  )}
+                </Panel>
+
+                {/* Stats row */}
+                <div className="grid gap-3 grid-cols-3">
+                  <Panel className="min-h-0 p-4 text-center">
+                    <div className="text-2xl font-black text-white">{buildingReports.length}</div>
+                    <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "تقارير" : "Reports"}</div>
+                  </Panel>
+                  <Panel className="min-h-0 p-4 text-center">
+                    <div className="text-2xl font-black text-red-300">{buildingReports.filter(r => r.status === "critical").length}</div>
+                    <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "حرجة" : "Critical"}</div>
+                  </Panel>
+                  <Panel className="min-h-0 p-4 text-center">
+                    <div className="text-2xl font-black text-amber-300">{buildingVisitors.length}</div>
+                    <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "زوار" : "Visitors"}</div>
+                  </Panel>
                 </div>
-                <div className="mt-2 text-xs text-slate-600 font-mono">{b.qrCode}</div>
-              </Panel>
-            );
-          })}
+
+                {/* Reports */}
+                <Panel>
+                  <div className="mb-3 font-black text-white">
+                    {language === "ar" ? "التقارير" : "Reports"}
+                    {isGuard && <span className="ms-2 text-xs font-normal text-slate-400">({language === "ar" ? "تقاريرك فقط" : "Your reports only"})</span>}
+                  </div>
+                  {buildingReports.length === 0
+                    ? <EmptyMsg title={language === "ar" ? "لا تقارير" : "No Reports"} text="" />
+                    : <div className="space-y-3">
+                        {buildingReports.map(r => (
+                          <div key={r.id} className={`rounded-2xl border p-3 ${r.status === "critical" ? "border-red-500/30 bg-red-500/5" : r.status === "warning" ? "border-amber-500/20 bg-amber-500/5" : "border-white/10 bg-white/5"}`}>
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div className="flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge className={getStatusBadgeClass(r.status)}>{r.status}</Badge>
+                                  <span className="font-bold text-white text-sm">{r.senderName}</span>
+                                  <span className="text-xs text-slate-400">{r.time}</span>
+                                </div>
+                                {(isOwner || isAdmin) && (
+                                  <div className="mt-1 text-xs text-slate-500">{r.senderEmail} · {r.senderPhone}</div>
+                                )}
+                                <p className="mt-2 text-sm text-slate-300">{r.text}</p>
+                                {r.mediaUrl && r.mediaUrl !== "__local__" && r.mediaKind === "image" && (
+                                  <img src={r.mediaUrl} alt="media" className="mt-2 max-h-40 rounded-xl object-cover" />
+                                )}
+                              </div>
+                              {(isOwner || isAdmin) && (
+                                <Btn variant="danger" className="h-7 px-2 text-xs flex-shrink-0" onClick={() => {
+                                  mutate(prev => ({ ...prev, reports: prev.reports.filter(x => x.id !== r.id) }));
+                                  void deleteReportRemote(r.id);
+                                }}>✕</Btn>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                  }
+                </Panel>
+
+                {/* Visitors */}
+                <Panel>
+                  <div className="mb-3 font-black text-white">{language === "ar" ? "الزوار المرتبطون" : "Scheduled Visitors"}</div>
+                  {buildingVisitors.length === 0
+                    ? <EmptyMsg title={language === "ar" ? "لا زوار" : "No Visitors"} text="" />
+                    : <div className="space-y-2">
+                        {buildingVisitors.map(v => (
+                          <div key={v.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/5 p-3">
+                            <div>
+                              <div className="font-bold text-white">{v.guestName}</div>
+                              <div className="text-xs text-slate-400">{v.company} · {v.arrivalDate} {v.arrivalTime}</div>
+                              <div className="text-xs text-amber-400 font-mono mt-1">{v.passCode}</div>
+                            </div>
+                            <Badge className={v.status === "arrived" ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : v.status === "cancelled" ? "border-red-400/30 bg-red-500/15 text-red-300" : "border-amber-400/30 bg-amber-500/15 text-amber-300"}>{v.status}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                  }
+                </Panel>
+
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
