@@ -440,7 +440,12 @@ export default function App() {
   const activeConversation = useMemo(() => visibleConversations.find(c => c.id === conversationId) ?? visibleConversations[0], [conversationId, visibleConversations]);
   const visibleTasks = useMemo(() => isGuard && currentUser ? mergedTasks.filter(t => t.assignedTo === currentUser.id) : snapshot.tasks, [currentUser, isGuard, snapshot.tasks]);
 
-  const todayShifts = useMemo(() => shiftFilter === "today" ? mergedShifts.filter(s => s.date === today()) : mergedShifts, [mergedShifts, shiftFilter]);
+  const todayShifts = useMemo(() => {
+    const base = isGuard && currentUser
+      ? mergedShifts.filter(s => s.guardId === currentUser.id)
+      : mergedShifts;
+    return shiftFilter === "today" ? base.filter(s => s.date === today()) : base;
+  }, [mergedShifts, shiftFilter, isGuard, currentUser]);
   const myShift = useMemo(() => isGuard && currentUser ? mergedShifts.find(s => s.guardId === currentUser.id && s.date === today()) : null, [currentUser, isGuard, mergedShifts]);
   const insights = useMemo(() => analyzeData(mergedReports, mergedShifts, mergedViolations, mergedSOSEvents, mergedAttendance, snapshot.buildings), [mergedReports, mergedShifts, mergedViolations, mergedSOSEvents, mergedAttendance, snapshot.buildings]);
 
@@ -2237,16 +2242,20 @@ export default function App() {
   };
 
   const renderBuildings = () => {
+    // Guard sees ALL buildings (to pick for report) but only their own data
+    const allBuildings = snapshot.buildings;
     const filteredBuildings = buildingSearch.trim()
-      ? snapshot.buildings.filter(b =>
+      ? allBuildings.filter(b =>
           b.nameAr.includes(buildingSearch) ||
           b.nameEn.toLowerCase().includes(buildingSearch.toLowerCase())
         )
-      : snapshot.buildings;
+      : allBuildings;
 
     const selectedBuilding = selectedBuildingId ? snapshot.buildings.find(b => b.id === selectedBuildingId) : null;
     const buildingReports = selectedBuilding
-      ? mergedReports.filter(r => r.buildingId === selectedBuilding.id && (isGuard ? r.senderId === currentUser?.id : true))
+      ? (isGuard && currentUser
+          ? mergedReports.filter(r => r.buildingId === selectedBuilding.id && r.senderId === currentUser.id)
+          : mergedReports.filter(r => r.buildingId === selectedBuilding.id))
       : [];
     const buildingVisitors = selectedBuilding
       ? mergedVisitors.filter(v => v.buildingId === selectedBuilding.id)
@@ -2294,7 +2303,9 @@ export default function App() {
               {filteredBuildings.length === 0
                 ? <div className="p-4 text-center text-sm text-slate-500">{language === "ar" ? "لا نتائج" : "No results"}</div>
                 : filteredBuildings.map(b => {
-                    const bReports = mergedReports.filter(r => r.buildingId === b.id);
+                    const bReports = isGuard && currentUser
+                      ? mergedReports.filter(r => r.buildingId === b.id && r.senderId === currentUser.id)
+                      : mergedReports.filter(r => r.buildingId === b.id);
                     const criticals = bReports.filter(r => r.status === "critical").length;
                     const isActive = selectedBuildingId === b.id;
                     return (
