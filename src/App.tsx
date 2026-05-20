@@ -280,6 +280,10 @@ export default function App() {
   const [buildingSearch, setBuildingSearch] = useState("");
   const [showAddBuilding, setShowAddBuilding] = useState(false);
   const [addBuildingForm, setAddBuildingForm] = useState({ nameAr: "", nameEn: "", area: "" });
+  const [showAddUserForm, setShowAddUserForm] = useState(false);
+  const [directAddForm, setDirectAddForm] = useState({ name: "", email: "", phone: "", password: "", role: "guard" as Role, buildingId: "" });
+  const [editUserId, setEditUserId] = useState<string | null>(null);
+  const [editUserForm, setEditUserForm] = useState({ name: "", phone: "", buildingId: "", role: "guard" as Role });
   const chatFileRef = useRef<HTMLInputElement | null>(null);
   const [visitorQrMap, setVisitorQrMap] = useState<Record<string, string>>({});
   const [shiftFilter, setShiftFilter] = useState<"all" | "today">("today");
@@ -391,7 +395,15 @@ export default function App() {
 
   const visibleReports = useMemo(() => isGuard && currentUser ? mergedReports.filter(r => r.senderId === currentUser.id) : mergedReports.slice().sort((a,b) => b.time.localeCompare(a.time)), [currentUser, isGuard, mergedReports]);
   const pagedReports = useMemo(() => visibleReports.slice((reportPage - 1) * REPORTS_PER_PAGE, reportPage * REPORTS_PER_PAGE), [reportPage, visibleReports]);
-  const filteredUsers = useMemo(() => { const q = userFilter.trim().toLowerCase(); return q ? approvedUsers.filter(u => `${u.name} ${u.email}`.toLowerCase().includes(q)) : approvedUsers; }, [approvedUsers, userFilter]);
+  const filteredUsers = useMemo(() => {
+    const q = userFilter.trim().toLowerCase();
+    if (!q) return approvedUsers;
+    return approvedUsers.filter(u =>
+      u.name.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q) ||
+      securityNumber(u.id).toLowerCase().includes(q)
+    );
+  }, [approvedUsers, userFilter]);
   const filteredVisitors = useMemo(() => {
     const q = visitorSearch.trim().toLowerCase();
     return mergedVisitors.filter(v => visitorStatusFilter === "all" || v.status === visitorStatusFilter).filter(v => !q || `${v.guestName} ${v.company} ${v.identityNumber ?? ""}`.toLowerCase().includes(q));
@@ -1302,69 +1314,241 @@ export default function App() {
     </div>
   );
 
+  const saveUserEdit = (userId: string) => {
+    const u = approvedUsers.find(x => x.id === userId);
+    if (!u) return;
+    const updated = { ...u, name: editUserForm.name || u.name, phone: editUserForm.phone || u.phone, assignedBuildingId: editUserForm.buildingId || u.assignedBuildingId, role: editUserForm.role };
+    mutate(prev => ({ ...prev, users: prev.users.map(x => x.id === userId ? updated : x) }), language === "ar" ? "تم تحديث البيانات" : "Updated");
+    void saveApprovedUser(updated);
+    setEditUserId(null);
+  };
+
+  const addUserDirectly = (e: FormEvent) => {
+    e.preventDefault();
+    if (!directAddForm.name.trim() || !directAddForm.email.trim() || !directAddForm.password.trim()) return;
+    const emailCheck = validateEmail(directAddForm.email);
+    if (!emailCheck.valid) { showToast(language === "ar" ? (emailCheck.errorAr ?? "بريد غير صحيح") : (emailCheck.errorEn ?? "Invalid email"), "danger"); return; }
+    if (approvedUsers.some(u => u.email.toLowerCase() === directAddForm.email.trim().toLowerCase())) { showToast(language === "ar" ? "البريد مستخدم بالفعل" : "Email already exists", "danger"); return; }
+    const newUser: User = {
+      id: `user-${Date.now()}`, name: directAddForm.name.trim(), email: directAddForm.email.trim(),
+      phone: directAddForm.phone.trim(), role: directAddForm.role, status: "approved",
+      assignedBuildingId: directAddForm.buildingId || undefined,
+      permissions: directAddForm.role === "admin"
+        ? ["reports","alerts","attendance","buildings","viewReports","chat","visitors","shifts","violations"]
+        : ["reports","attendance","chat","buildings","visitors","sos"],
+      rating: 4, passwordHash: hashPassword(directAddForm.password),
+      soundEnabled: true, desktopNotificationsEnabled: false, showFullToAdmin: false,
+      createdAt: nowStamp(), violations: 0,
+    };
+    void saveApprovedUser(newUser);
+    mutate(prev => ({ ...prev, users: [newUser, ...prev.users], auditLog: [createAuditEntry(currentUser, "direct_add_user", newUser.email, `تمت إضافة ${newUser.name} مباشرة`, "info"), ...prev.auditLog] }), language === "ar" ? "✅ تمت إضافة المستخدم" : "✅ User added");
+    setDirectAddForm({ name: "", email: "", phone: "", password: "", role: "guard", buildingId: "" });
+    setShowAddUserForm(false);
+  };
+
   const renderUsers = () => (
     <div className="space-y-6">
-      <SectionHead title={language === "ar" ? "المستخدمون" : "Users"} />
-      {pendingUsers.length > 0 && (
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SectionHead title={language === "ar" ? "إدارة المستخدمين" : "User Management"} subtitle={`${approvedUsers.length} ${language === "ar" ? "مستخدم" : "users"}`} />
+        {isOwner && (
+          <Btn onClick={() => setShowAddUserForm(p => !p)}>
+            {showAddUserForm ? (language === "ar" ? "إلغاء" : "Cancel") : ("+ " + (language === "ar" ? "إضافة مباشر" : "Add Directly"))}
+          </Btn>
+        )}
+      </div>
+
+      {/* Direct add user form - owner only */}
+      {isOwner && showAddUserForm && (
         <Panel>
-          <div className="mb-4 font-black text-amber-400">⏳ {language === "ar" ? `طلبات انتظار (${pendingUsers.length})` : `Pending Requests (${pendingUsers.length})`}</div>
-          {pendingUsers.map(u => (
-            <div key={u.id} className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
-              <div><div className="font-bold text-white">{u.name}</div><div className="text-xs text-slate-400">{u.email} · {pair(language, roleLabels[u.role])}</div></div>
-              <div className="flex gap-2">
-                <Btn onClick={() => approveUser(u.id)}>{language === "ar" ? "موافقة" : "Approve"}</Btn>
-                <Btn variant="danger" onClick={() => rejectUser(u.id)}>{language === "ar" ? "رفض" : "Reject"}</Btn>
+          <div className="mb-4 font-black text-white">{language === "ar" ? "إضافة مستخدم مباشرة" : "Add User Directly"}</div>
+          <form onSubmit={addUserDirectly} className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div><Lbl>{language === "ar" ? "الاسم الكامل" : "Full Name"}</Lbl><TxtInput required value={directAddForm.name} onChange={e => setDirectAddForm(p => ({ ...p, name: e.target.value }))} /></div>
+              <div><Lbl>{language === "ar" ? "البريد الإلكتروني" : "Email"}</Lbl><TxtInput required type="email" value={directAddForm.email} onChange={e => setDirectAddForm(p => ({ ...p, email: e.target.value }))} /></div>
+              <div><Lbl>{language === "ar" ? "رقم الهاتف" : "Phone"}</Lbl><TxtInput value={directAddForm.phone} onChange={e => setDirectAddForm(p => ({ ...p, phone: e.target.value }))} /></div>
+              <div><Lbl>{language === "ar" ? "كلمة السر" : "Password"}</Lbl><TxtInput required type="password" value={directAddForm.password} onChange={e => setDirectAddForm(p => ({ ...p, password: e.target.value }))} /></div>
+              <div><Lbl>{language === "ar" ? "الدور" : "Role"}</Lbl>
+                <SelInput value={directAddForm.role} onChange={e => setDirectAddForm(p => ({ ...p, role: e.target.value as Role }))}>
+                  <option value="guard">{language === "ar" ? "حارس أمن" : "Guard"}</option>
+                  <option value="admin">{language === "ar" ? "إداري" : "Admin"}</option>
+                </SelInput>
+              </div>
+              <div><Lbl>{language === "ar" ? "المبنى المخصص" : "Assigned Building"}</Lbl>
+                <SelInput value={directAddForm.buildingId} onChange={e => setDirectAddForm(p => ({ ...p, buildingId: e.target.value }))}>
+                  <option value="">{language === "ar" ? "— اختياري —" : "— Optional —"}</option>
+                  {snapshot.buildings.map(b => <option key={b.id} value={b.id}>{language === "ar" ? b.nameAr : b.nameEn}</option>)}
+                </SelInput>
               </div>
             </div>
-          ))}
+            <Btn type="submit" className="w-full">{language === "ar" ? "إضافة المستخدم" : "Add User"}</Btn>
+          </form>
         </Panel>
       )}
-      <div><TxtInput className="mb-4 max-w-xs" placeholder={language === "ar" ? "بحث..." : "Search..."} value={userFilter} onChange={e => setUserFilter(e.target.value)} /></div>
-      <div className="space-y-3">
-        {filteredUsers.map(u => (
-          <Panel key={u.id}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge className={getRoleBadgeClass(u.role)}>{pair(language, roleLabels[u.role])}</Badge>
-                  <span className="font-black text-white">{u.name}</span>
-                  {(u.violations ?? 0) > 0 && <Badge className="border-red-400/30 bg-red-500/15 text-red-300">⚠️ {u.violations} {language === "ar" ? "مخالفات" : "violations"}</Badge>}
+
+      {/* Pending requests */}
+      {pendingUsers.length > 0 && (
+        <Panel>
+          <div className="mb-4 flex items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-xs font-black text-black">{pendingUsers.length}</span>
+            <div className="font-black text-amber-400">{language === "ar" ? "طلبات انتظار" : "Pending Requests"}</div>
+          </div>
+          <div className="space-y-3">
+            {pendingUsers.map(u => (
+              <div key={u.id} className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-black text-white">{u.name}</div>
+                    <div className="text-sm text-slate-400">{u.email}</div>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      <Badge className={getRoleBadgeClass(u.role)}>{pair(language, roleLabels[u.role])}</Badge>
+                      {u.assignedBuildingId && <Badge className="border-sky-400/30 bg-sky-500/15 text-sky-300">{formatBuilding(snapshot.buildings.find(b => b.id === u.assignedBuildingId), language)}</Badge>}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">{language === "ar" ? "طلب في:" : "Requested:"} {u.createdAt}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Btn onClick={() => {
+                      approveUser(u.id);
+                      sendToServiceWorker({ title: "✅ " + (language === "ar" ? "تمت الموافقة" : "Approved"), body: u.name, tag: u.id });
+                    }}>{language === "ar" ? "✅ موافقة" : "✅ Approve"}</Btn>
+                    <Btn variant="danger" onClick={() => rejectUser(u.id)}>{language === "ar" ? "رفض" : "Reject"}</Btn>
+                  </div>
                 </div>
-                <div className="mt-1 text-sm text-slate-400">{u.email} · ⭐ {u.rating}</div>
-                {isOwner && u.id !== currentUser?.id && (
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {Object.keys(permissionLabels).map(p => {
-                      const hasPerm = (u.permissions ?? []).includes(p);
-                      return (
-                        <button key={p} onClick={() => {
-                          const newPerms = hasPerm ? u.permissions.filter(x => x !== p) : [...(u.permissions ?? []), p];
-                          mutate(prev => ({ ...prev, users: prev.users.map(x => x.id === u.id ? { ...x, permissions: newPerms } : x) }));
-                          void saveApprovedUser({ ...u, permissions: newPerms });
-                        }} className={`rounded-full border px-2 py-0.5 text-xs font-bold transition ${hasPerm ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : "border-white/10 bg-white/5 text-slate-500 hover:bg-white/10"}`}>
-                          {pair(language, permissionLabels[p])}
-                        </button>
-                      );
-                    })}
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
+
+      {/* Search bar */}
+      <TxtInput
+        className="max-w-sm"
+        placeholder={language === "ar" ? "🔍 بحث بالاسم أو رقم الأمان SEC-XXXX..." : "🔍 Search by name or SEC number..."}
+        value={userFilter}
+        onChange={e => setUserFilter(e.target.value)}
+      />
+
+      {/* Stats row */}
+      <div className="grid gap-3 grid-cols-3">
+        <Panel className="min-h-0 p-4 text-center">
+          <div className="text-2xl font-black text-emerald-400">{approvedUsers.filter(u => u.role === "guard").length}</div>
+          <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "حراس" : "Guards"}</div>
+        </Panel>
+        <Panel className="min-h-0 p-4 text-center">
+          <div className="text-2xl font-black text-sky-400">{approvedUsers.filter(u => u.role === "admin").length}</div>
+          <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "إداريون" : "Admins"}</div>
+        </Panel>
+        <Panel className="min-h-0 p-4 text-center">
+          <div className="text-2xl font-black text-amber-400">{activeUserIds.length}</div>
+          <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "متصلون الآن" : "Online Now"}</div>
+        </Panel>
+      </div>
+
+      {/* User list */}
+      <div className="space-y-3">
+        {filteredUsers.length === 0
+          ? <EmptyMsg title={language === "ar" ? "لا نتائج" : "No results"} text="" />
+          : filteredUsers.map(u => {
+            const isOnlineUser = activeUserIds.includes(u.id);
+            const isEditing = editUserId === u.id;
+            const isSelf = u.id === currentUser?.id;
+            const secNum = securityNumber(u.id);
+            const assignedBuilding = snapshot.buildings.find(b => b.id === u.assignedBuildingId);
+            // Admin sees limited data for guards
+            const canSeeFullData = isOwner || u.showFullToAdmin || u.role !== "guard";
+
+            return (
+              <Panel key={u.id} className={isOnlineUser ? "border-emerald-500/20" : ""}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  {/* User info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Online indicator */}
+                      <span className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${isOnlineUser ? "bg-emerald-400 animate-pulse" : "bg-slate-600"}`} />
+                      <Badge className={getRoleBadgeClass(u.role)}>{pair(language, roleLabels[u.role])}</Badge>
+                      <span className="font-black text-white">{u.name}</span>
+                      {isSelf && <Badge className="border-amber-400/30 bg-amber-500/15 text-amber-300">{language === "ar" ? "أنت" : "You"}</Badge>}
+                      {(u.violations ?? 0) > 0 && <Badge className="border-red-400/30 bg-red-500/15 text-red-300">⚠️ {u.violations}</Badge>}
+                    </div>
+                    <div className="mt-2 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2 lg:grid-cols-3">
+                      <div className="text-slate-500">{language === "ar" ? "رقم الأمان" : "Security No."}: <span className="text-amber-400 font-mono font-bold">{secNum}</span></div>
+                      {canSeeFullData
+                        ? <>
+                            <div className="text-slate-400">{language === "ar" ? "البريد" : "Email"}: {u.email}</div>
+                            <div className="text-slate-400">{language === "ar" ? "الهاتف" : "Phone"}: {u.phone || "—"}</div>
+                          </>
+                        : <div className="text-slate-600 italic col-span-2">{language === "ar" ? "البيانات الحساسة مخفية (رؤية إدارية)" : "Sensitive data hidden (admin view)"}</div>
+                      }
+                      <div className="text-slate-400">{language === "ar" ? "المبنى" : "Building"}: {assignedBuilding ? (language === "ar" ? assignedBuilding.nameAr : assignedBuilding.nameEn) : "—"}</div>
+                      <div className="text-slate-400">{language === "ar" ? "انضم" : "Joined"}: {u.createdAt?.slice(0, 10) ?? "—"}</div>
+                    </div>
+                  </div>
+
+                  {/* Owner controls */}
+                  {isOwner && !isSelf && (
+                    <div className="flex flex-shrink-0 flex-col items-end gap-2">
+                      <div className="flex gap-2">
+                        <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => {
+                          if (isEditing) { setEditUserId(null); return; }
+                          setEditUserId(u.id);
+                          setEditUserForm({ name: u.name, phone: u.phone, buildingId: u.assignedBuildingId ?? "", role: u.role });
+                        }}>{isEditing ? (language === "ar" ? "إلغاء" : "Cancel") : (language === "ar" ? "✏️ تعديل" : "✏️ Edit")}</Btn>
+                        {/* Restore sound button */}
+                        <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => {
+                          mutate(prev => ({ ...prev, users: prev.users.map(x => x.id === u.id ? { ...x, soundEnabled: true } : x) }));
+                          void saveApprovedUser({ ...u, soundEnabled: true });
+                          showToast(language === "ar" ? "🔊 تم تفعيل الصوت" : "🔊 Sound restored", "success");
+                        }} title={language === "ar" ? "إعادة تفعيل الصوت" : "Restore Sound"}>🔊</Btn>
+                        <Btn variant="danger" className="h-8 px-3 text-xs" onClick={() => deleteUser(u.id)}>{language === "ar" ? "حذف" : "Delete"}</Btn>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Edit form - owner only */}
+                {isOwner && isEditing && (
+                  <div className="mt-4 border-t border-white/10 pt-4 space-y-3">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      <div><Lbl>{language === "ar" ? "الاسم" : "Name"}</Lbl><TxtInput value={editUserForm.name} onChange={e => setEditUserForm(p => ({ ...p, name: e.target.value }))} /></div>
+                      <div><Lbl>{language === "ar" ? "الهاتف" : "Phone"}</Lbl><TxtInput value={editUserForm.phone} onChange={e => setEditUserForm(p => ({ ...p, phone: e.target.value }))} /></div>
+                      <div><Lbl>{language === "ar" ? "الدور" : "Role"}</Lbl>
+                        <SelInput value={editUserForm.role} onChange={e => setEditUserForm(p => ({ ...p, role: e.target.value as Role }))}>
+                          <option value="guard">{language === "ar" ? "حارس أمن" : "Guard"}</option>
+                          <option value="admin">{language === "ar" ? "إداري" : "Admin"}</option>
+                          <option value="owner">{language === "ar" ? "مالك" : "Owner"}</option>
+                        </SelInput>
+                      </div>
+                      <div className="sm:col-span-2"><Lbl>{language === "ar" ? "المبنى المخصص" : "Assigned Building"}</Lbl>
+                        <SelInput value={editUserForm.buildingId} onChange={e => setEditUserForm(p => ({ ...p, buildingId: e.target.value }))}>
+                          <option value="">{language === "ar" ? "— بدون تخصيص —" : "— None —"}</option>
+                          {snapshot.buildings.map(b => <option key={b.id} value={b.id}>{language === "ar" ? b.nameAr : b.nameEn}</option>)}
+                        </SelInput>
+                      </div>
+                    </div>
+                    {/* Permissions */}
+                    <div>
+                      <Lbl>{language === "ar" ? "الصلاحيات" : "Permissions"}</Lbl>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Object.keys(permissionLabels).map(p => {
+                          const hasPerm = (u.permissions ?? []).includes(p);
+                          return (
+                            <button key={p} type="button" onClick={() => {
+                              const newPerms = hasPerm ? u.permissions.filter(x => x !== p) : [...(u.permissions ?? []), p];
+                              mutate(prev => ({ ...prev, users: prev.users.map(x => x.id === u.id ? { ...x, permissions: newPerms } : x) }));
+                              void saveApprovedUser({ ...u, permissions: newPerms });
+                            }} className={`rounded-full border px-2.5 py-1 text-xs font-bold transition ${hasPerm ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : "border-white/10 bg-white/5 text-slate-500 hover:bg-white/10"}`}>
+                              {pair(language, permissionLabels[p])}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <Btn onClick={() => saveUserEdit(u.id)} className="w-full">{language === "ar" ? "💾 حفظ التغييرات" : "💾 Save Changes"}</Btn>
                   </div>
                 )}
-              </div>
-              {isOwner && u.id !== currentUser?.id && (
-                <div className="flex gap-2">
-                  <SelInput className="h-8 w-28 text-xs px-2" value={u.role} onChange={e => {
-                    const newRole = e.target.value as Role;
-                    mutate(prev => ({ ...prev, users: prev.users.map(x => x.id === u.id ? { ...x, role: newRole } : x) }), language === "ar" ? "تم تغيير الدور" : "Role changed");
-                    void saveApprovedUser({ ...u, role: newRole });
-                  }}>
-                    <option value="guard">Guard</option>
-                    <option value="admin">Admin</option>
-                    <option value="owner">Owner</option>
-                  </SelInput>
-                  <Btn variant="danger" className="h-8 px-3 text-xs" onClick={() => deleteUser(u.id)}>{language === "ar" ? "حذف" : "Delete"}</Btn>
-                </div>
-              )}
-            </div>
-          </Panel>
-        ))}
+              </Panel>
+            );
+          })
+        }
       </div>
     </div>
   );
