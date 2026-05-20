@@ -592,12 +592,28 @@ export default function App() {
   }, [remoteReports]);
 
   useEffect(() => {
-    if (remoteAlerts.length > 0)
+    if (remoteAlerts.length > 0) {
+      // Auto-stop alerts that were stopped on another device
+      const remoteStoppedIds = remoteAlerts
+        .filter(a => (a as AlertLog & { stopped?: boolean }).stopped === true)
+        .map(a => a.id);
+      if (remoteStoppedIds.length > 0) {
+        setStoppedAlertIds(prev => new Set([...prev, ...remoteStoppedIds]));
+        // If emergency was active and all critical alerts are now stopped, stop siren
+        const allCritStopped = remoteAlerts
+          .filter(a => a.severity === "critical")
+          .every(a => (a as AlertLog & { stopped?: boolean }).stopped === true);
+        if (allCritStopped) {
+          stopEmergencySound();
+          setEmergencyActive(false);
+        }
+      }
       setSnapshot(prev => {
         const map = new Map(prev.alerts.map(a => [a.id, a]));
         remoteAlerts.forEach(a => map.set(a.id, a));
         return { ...prev, alerts: Array.from(map.values()).sort((a, b) => b.time.localeCompare(a.time)) };
       });
+    }
   }, [remoteAlerts]);
 
   useEffect(() => {
@@ -1009,12 +1025,48 @@ export default function App() {
           showToast(language === "ar" ? "❌ رمز QR غير معروف — تأكد أنه QR مبنى" : "❌ Unknown QR — make sure it's a building QR", "danger");
         }
       } else if (data.type === "building" && qrContext === "attendance") {
-        const building = snapshot.buildings.find(b => b.id === data.buildingId);
-        if (!building || !currentUser) return;
-        if (currentUser.assignedBuildingId && currentUser.assignedBuildingId !== data.buildingId) { showToast(language === "ar" ? "⚠️ هذا المبنى غير مخصص لك" : "⚠️ Building mismatch", "danger"); return; }
-        const record: AttendanceRecord = { id: `at-${Date.now()}`, userId: currentUser.id, userName: currentUser.name, buildingId: data.buildingId, method: "qr", time: nowStamp() };
-        mutate(prev => ({ ...prev, attendance: [record, ...prev.attendance] }), language === "ar" ? `تم تسجيل الحضور في ${building.nameAr}` : `Checked in at ${building.nameEn}`);
-        void saveAttendance(record);
+        // Match building by id OR qrCode OR name
+        const building = snapshot.buildings.find(b =>
+          b.id === data.buildingId ||
+          b.qrCode === data.buildingId ||
+          b.qrCode === data.qrCode ||
+          b.nameEn === data.buildingName
+        );
+        if (!building || !currentUser) { showToast(language === "ar" ? "❌ مبنى غير معروف" : "❌ Unknown building", "danger"); return; }
+        // STRICT: must match assigned building
+        if (!currentUser.assignedBuildingId) {
+          showToast(language === "ar" ? "⚠️ لا يوجد مبنى مخصص لك — تواصل مع المالك" : "⚠️ No building assigned — contact owner", "danger"); return;
+        }
+        if (currentUser.assignedBuildingId !== building.id) {
+          const myB = snapshot.buildings.find(b => b.id === currentUser.assignedBuildingId);
+          showToast(language === "ar" ? `❌ مبناك: ${myB?.nameAr ?? "—"} — هذا QR لـ ${building.nameAr}` : `❌ Your building: ${myB?.nameEn ?? "—"} — this QR is for ${building.nameEn}`, "danger"); return;
+        }
+        // Toggle: find today's last record
+        const todayStr = today();
+        const myRecs = [...mergedAttendance, ...snapshot.attendance]
+          .filter((a, i, arr) => arr.findIndex(x => x.id === a.id) === i) // dedupe
+          .filter(a => a.userId === currentUser.id && a.time.startsWith(todayStr))
+          .sort((a, b) => b.time.localeCompare(a.time));
+        const lastRec = myRecs[0];
+        const isIn = lastRec && !lastRec.checkOut;
+        if (isIn) {
+          // CLOCK OUT
+          const checkOutTime = nowStamp();
+          const updated = { ...lastRec, checkOut: checkOutTime };
+          mutate(prev => ({ ...prev, attendance: prev.attendance.map(a => a.id === lastRec.id ? updated : a) }));
+          void saveAttendance(updated);
+          const inTime = new Date(lastRec.time.replace(" ","T"));
+          const outTime = new Date(checkOutTime.replace(" ","T"));
+          const diffMins = Math.round((outTime.getTime() - inTime.getTime()) / 60000);
+          const dur = `${Math.floor(diffMins/60)}س ${diffMins%60}د`;
+          showToast(language === "ar" ? `🔴 تسجيل خروج — ${building.nameAr} · المدة: ${dur}` : `🔴 Clocked OUT — ${building.nameEn} · ${dur}`, "info");
+        } else {
+          // CLOCK IN
+          const record: AttendanceRecord = { id: `at-${Date.now()}`, userId: currentUser.id, userName: currentUser.name, buildingId: building.id, method: "qr", time: nowStamp() };
+          mutate(prev => ({ ...prev, attendance: [record, ...prev.attendance] }));
+          void saveAttendance(record);
+          showToast(language === "ar" ? `🟢 تسجيل دخول — ${building.nameAr}` : `🟢 Clocked IN — ${building.nameEn}`, "success");
+        }
       } else if (data.type === "visitor") {
         const visitor = snapshot.visitors.find(v => v.passCode === data.passCode);
         if (visitor) { mutate(prev => ({ ...prev, visitors: prev.visitors.map(v => v.id === visitor.id ? { ...v, status: "arrived", checkInTime: nowStamp() } : v) }), language === "ar" ? `✅ تم استقبال ${visitor.guestName}` : `✅ ${visitor.guestName} checked in`); void updateVisitorRemote(visitor.id, { status: "arrived", checkInTime: nowStamp() }); }
@@ -2397,10 +2449,17 @@ export default function App() {
               <Btn variant="danger" onClick={() => {
                 stopEmergencySound();
                 setEmergencyActive(false);
-                // Mark all critical alerts as stopped
-                const critIds = new Set(mergedAlerts.filter(a => a.severity === "critical").map(a => a.id));
+                // Mark all critical alerts as stopped - save to Firebase for all devices
+                const critAlerts = mergedAlerts.filter(a => a.severity === "critical");
+                critAlerts.forEach(a => {
+                  const updated = { ...a, stopped: true } as AlertLog & { stopped?: boolean };
+                  void saveAlert(updated as AlertLog);
+                });
+                const critIds = new Set(critAlerts.map(a => a.id));
                 setStoppedAlertIds(prev => new Set([...prev, ...critIds]));
-                showToast(language === "ar" ? "🔇 تم إيقاف جميع الإنذارات" : "🔇 All alerts stopped", "info");
+                // Notify all devices to stop siren via Service Worker
+                sendToServiceWorker({ type: "CLEAR_EMERGENCY_NOTIFICATION" });
+                showToast(language === "ar" ? "🔇 تم إيقاف جميع الإنذارات على جميع الأجهزة" : "🔇 All alerts stopped on all devices", "info");
               }}>
                 🔇 {language === "ar" ? "إيقاف الكل" : "Stop All"}
               </Btn>
@@ -2441,6 +2500,8 @@ export default function App() {
                       <Btn variant="secondary" className="h-7 px-3 text-xs" onClick={() => {
                         setStoppedAlertIds(prev => new Set([...prev, a.id]));
                         if (emergencyActive) { stopEmergencySound(); setEmergencyActive(false); }
+                        // Save stopped state to Firebase so all devices know
+                        void saveAlert({ ...a, stopped: true } as AlertLog);
                         showToast(language === "ar" ? "🔇 تم إيقاف الإنذار" : "🔇 Alert stopped", "info");
                       }}>🔇 {language === "ar" ? "إيقاف" : "Stop"}</Btn>
                     )}
