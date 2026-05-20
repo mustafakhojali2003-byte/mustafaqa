@@ -1956,19 +1956,28 @@ export default function App() {
     <div className="space-y-6">
       <SectionHead title={language === "ar" ? "خريطة المباني" : "Buildings Map"} />
 
-      {/* Interactive map via Google Maps embed */}
+      {/* Interactive map via OpenStreetMap (free, no API key) */}
       <Panel>
-        <div className="mb-3 font-black text-white">📍 {language === "ar" ? "موقع المجمع" : "Compound Location"}</div>
-        <div className="overflow-hidden rounded-2xl border border-white/10" style={{ height: 400 }}>
+        <div className="mb-3 flex items-center justify-between">
+          <div className="font-black text-white">📍 {language === "ar" ? "موقع المجمع — الدوحة، قطر" : "Compound Location — Doha, Qatar"}</div>
+          <a href="https://www.google.com/maps/search/Doha+Qatar" target="_blank" rel="noopener noreferrer"
+            className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-300 hover:bg-amber-500/20 transition">
+            🗺 {language === "ar" ? "فتح Google Maps" : "Open Google Maps"}
+          </a>
+        </div>
+        <div className="overflow-hidden rounded-2xl border border-white/10" style={{ height: 420 }}>
           <iframe
-            title="map"
+            title="Doha Qatar Map"
             width="100%"
             height="100%"
             style={{ border: 0 }}
             loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-            src="https://www.google.com/maps/embed/v1/place?key=AIzaSyD-9tSrke72PouQMnMX-a7eZSW0jkFMBWY&q=Doha,Qatar&zoom=14"
+            src="https://www.openstreetmap.org/export/embed.html?bbox=51.48%2C25.25%2C51.56%2C25.32&layer=mapnik&marker=25.2854%2C51.5310"
+            allowFullScreen
           />
+        </div>
+        <div className="mt-2 text-xs text-slate-500 text-center">
+          {language === "ar" ? "المصدر: OpenStreetMap · مجاني بدون مفتاح API" : "Source: OpenStreetMap · Free, no API key required"}
         </div>
       </Panel>
 
