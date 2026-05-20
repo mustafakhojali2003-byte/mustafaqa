@@ -9,7 +9,7 @@ import { generateVisitorQR, generateBuildingQR } from "./services/qrService";
 import { analyzeData } from "./services/analyticsService";
 import { initFCM, listenForegroundMessages, sendPushViaWorker } from "./services/fcmService";
 import { validateEmail } from "./services/emailVerification";
-import type { AlertLog, AppSnapshot, AttendanceRecord, AuditEntry, AuditSeverity, Building, ChatMessage, Conversation, Language, NewAccountPayload, Pair, Report, ReportStatus, Role, Shift, SOSEvent, Tab, Task, Toast, ToastTone, User, Violation, VisitorFormPayload, VisitorRecord } from "./types/security";
+import type { AlertLog, AppSnapshot, AttendanceRecord, AuditEntry, AuditSeverity, Building, ChatMessage, Conversation, Language, NewAccountPayload, Pair, Report, ReportComment, ReportStatus, Role, Shift, SOSEvent, Tab, Task, Toast, ToastTone, User, Violation, VisitorFormPayload, VisitorRecord } from "./types/security";
 
 const STORAGE_KEY = "mustafaqa-v1";
 const SESSION_KEY = "mustafaqa-session-v1";
@@ -281,6 +281,12 @@ export default function App() {
   const [buildingSearch, setBuildingSearch] = useState("");
   const [qrModalBuilding, setQrModalBuilding] = useState<string | null>(null);
   const [stoppedAlertIds, setStoppedAlertIds] = useState<Set<string>>(new Set());
+  const [editReportId, setEditReportId] = useState<string | null>(null);
+  const [editReportForm, setEditReportForm] = useState({ text: "", status: "normal" as ReportStatus });
+  const [commentingReportId, setCommentingReportId] = useState<string | null>(null);
+  const [commentText, setCommentText] = useState("");
+  const [reportAddingPhotoId, setReportAddingPhotoId] = useState<string | null>(null);
+  const reportEditPhotoRef = useRef<HTMLInputElement | null>(null);
   const [buildingQrImages, setBuildingQrImages] = useState<Record<string, string>>({});
   const [showAddBuilding, setShowAddBuilding] = useState(false);
   const [addBuildingForm, setAddBuildingForm] = useState({ nameAr: "", nameEn: "", area: "" });
@@ -1583,6 +1589,39 @@ export default function App() {
     </div>
   );
 
+  const saveReportEdit = (reportId: string) => {
+    if (!currentUser) return;
+    mutate(prev => ({
+      ...prev,
+      reports: prev.reports.map(r => r.id === reportId
+        ? { ...r, text: editReportForm.text, status: editReportForm.status, editedAt: nowStamp() }
+        : r
+      ),
+    }), language === "ar" ? "✅ تم تعديل التقرير" : "✅ Report updated");
+    void saveReport({ ...mergedReports.find(r => r.id === reportId)!, text: editReportForm.text, status: editReportForm.status, editedAt: nowStamp() });
+    setEditReportId(null);
+  };
+
+  const addComment = (reportId: string) => {
+    if (!currentUser || !commentText.trim()) return;
+    const comment: ReportComment = {
+      id: `cmt-${Date.now()}`, authorId: currentUser.id,
+      authorName: currentUser.name, text: commentText.trim(), time: nowStamp(),
+    };
+    mutate(prev => ({
+      ...prev,
+      reports: prev.reports.map(r => r.id === reportId
+        ? { ...r, comments: [...(r.comments ?? []), comment] }
+        : r
+      ),
+    }));
+    const rep = mergedReports.find(r => r.id === reportId);
+    if (rep) void saveReport({ ...rep, comments: [...(rep.comments ?? []), comment] });
+    setCommentingReportId(null);
+    setCommentText("");
+    showToast(language === "ar" ? "✅ تم إضافة التعليق" : "✅ Comment added", "success");
+  };
+
   const renderReports = () => (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1657,22 +1696,136 @@ export default function App() {
           </form>
         </Panel>
       )}
-      <div className="space-y-3">
-        {pagedReports.length === 0 ? <EmptyMsg title={language === "ar" ? "لا تقارير" : "No Reports"} text="" /> : pagedReports.map(r => (
-          <Panel key={r.id}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge className={getStatusBadgeClass(r.status)}>{pair(language, reportStatusLabels[r.status])}</Badge>
-                  <span className="font-black text-white">{r.senderName}</span>
-                  <span className="text-xs text-slate-400">{r.time}</span>
+      {/* Hidden file input for adding photo to existing report */}
+      <input ref={reportEditPhotoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={async e => {
+        const file = e.target.files?.[0];
+        if (!file || !reportAddingPhotoId) return;
+        const dataUrl = await fileToDataUrl(file);
+        const rep = mergedReports.find(r => r.id === reportAddingPhotoId);
+        if (!rep) return;
+        const updated = { ...rep, mediaUrl: dataUrl, mediaKind: "image" as const, fileName: file.name };
+        mutate(prev => ({ ...prev, reports: prev.reports.map(r => r.id === reportAddingPhotoId ? updated : r) }));
+        void saveReport(updated);
+        setReportAddingPhotoId(null);
+        showToast(language === "ar" ? "✅ تمت إضافة الصورة" : "✅ Photo added", "success");
+        e.target.value = "";
+      }} />
+
+      <div className="space-y-4">
+        {pagedReports.length === 0
+          ? <EmptyMsg title={language === "ar" ? "لا تقارير" : "No Reports"} text="" />
+          : pagedReports.map(r => {
+            const canEdit = isOwner || r.senderId === currentUser?.id;
+            const isEditing = editReportId === r.id;
+            const isCommenting = commentingReportId === r.id;
+            const building = snapshot.buildings.find(b => b.id === r.buildingId);
+            return (
+              <Panel key={r.id}>
+                {/* Header */}
+                <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className={getStatusBadgeClass(r.status)}>{pair(language, reportStatusLabels[r.status])}</Badge>
+                    <span className="font-black text-white">{r.senderName}</span>
+                    {r.editedAt && <span className="text-xs text-slate-500 italic">{language === "ar" ? "معدّل" : "edited"}</span>}
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-slate-400">{r.time}</div>
+                    {building && <div className="text-xs text-amber-400 mt-0.5">📍 {language === "ar" ? building.nameAr : building.nameEn}</div>}
+                  </div>
                 </div>
-                <p className="mt-2 text-sm text-slate-300">{r.text}</p>
-              </div>
-              {(isOwner || isAdmin) && <Btn variant="danger" className="h-8 px-3 text-xs" onClick={() => { mutate(prev => ({ ...prev, reports: prev.reports.filter(x => x.id !== r.id) }), language === "ar" ? "تم الحذف" : "Deleted"); void deleteReportRemote(r.id); }}>{language === "ar" ? "حذف" : "Delete"}</Btn>}
-            </div>
-          </Panel>
-        ))}
+
+                {/* Edit mode */}
+                {isEditing ? (
+                  <div className="space-y-3 mb-3">
+                    <div className="grid grid-cols-3 gap-2">
+                      {(Object.keys(reportStatusLabels) as ReportStatus[]).map(s => (
+                        <button key={s} type="button" onClick={() => setEditReportForm(p => ({ ...p, status: s }))}
+                          className={`rounded-2xl border py-2 text-xs font-bold transition ${editReportForm.status === s ? getStatusBadgeClass(s) : "border-white/10 bg-white/5 text-slate-400"}`}>
+                          {s === "normal" ? "🟢 " : s === "warning" ? "🟡 " : "🔴 "}{pair(language, reportStatusLabels[s])}
+                        </button>
+                      ))}
+                    </div>
+                    <TxtArea rows={4} value={editReportForm.text} onChange={e => setEditReportForm(p => ({ ...p, text: e.target.value }))} />
+                    <div className="flex gap-2">
+                      <Btn className="flex-1" onClick={() => saveReportEdit(r.id)}>{language === "ar" ? "💾 حفظ" : "💾 Save"}</Btn>
+                      <Btn variant="secondary" className="flex-1" onClick={() => setEditReportId(null)}>{language === "ar" ? "إلغاء" : "Cancel"}</Btn>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-300 mb-3">{r.text}</p>
+                )}
+
+                {/* Photo */}
+                {r.mediaUrl && r.mediaUrl !== "__local__" && (
+                  <div className="mb-3">
+                    <img src={r.mediaUrl} alt="report" className="max-h-56 w-full rounded-2xl object-cover border border-white/10" />
+                  </div>
+                )}
+
+                {/* Comments */}
+                {(r.comments ?? []).length > 0 && (
+                  <div className="mb-3 space-y-2 border-t border-white/10 pt-3">
+                    {(r.comments ?? []).map(c => (
+                      <div key={c.id} className="rounded-xl bg-white/5 px-3 py-2">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-bold text-amber-300">{c.authorName}</span>
+                          <span className="text-xs text-slate-500">{c.time}</span>
+                        </div>
+                        <p className="text-xs text-slate-300">{c.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Add comment input */}
+                {isCommenting && (
+                  <div className="mb-3 space-y-2">
+                    <TxtArea rows={2} value={commentText} onChange={e => setCommentText(e.target.value)} placeholder={language === "ar" ? "اكتب تعليقاً..." : "Write a comment..."} />
+                    <div className="flex gap-2">
+                      <Btn className="flex-1" onClick={() => addComment(r.id)}>{language === "ar" ? "إرسال" : "Send"}</Btn>
+                      <Btn variant="secondary" onClick={() => { setCommentingReportId(null); setCommentText(""); }}>{language === "ar" ? "إلغاء" : "Cancel"}</Btn>
+                    </div>
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div className="flex flex-wrap gap-2 border-t border-white/10 pt-3">
+                  {/* Comment - all can comment */}
+                  <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => {
+                    setCommentingReportId(isCommenting ? null : r.id);
+                    setCommentText("");
+                  }}>
+                    💬 {(r.comments ?? []).length > 0 ? `${(r.comments ?? []).length}` : ""} {language === "ar" ? "تعليق" : "Comment"}
+                  </Btn>
+
+                  {/* Add photo */}
+                  {canEdit && !r.mediaUrl && (
+                    <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => {
+                      setReportAddingPhotoId(r.id);
+                      reportEditPhotoRef.current?.click();
+                    }}>📷 {language === "ar" ? "إضافة صورة" : "Add Photo"}</Btn>
+                  )}
+
+                  {/* Edit */}
+                  {canEdit && !isEditing && (
+                    <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => {
+                      setEditReportId(r.id);
+                      setEditReportForm({ text: r.text, status: r.status });
+                    }}>✏️ {language === "ar" ? "تعديل" : "Edit"}</Btn>
+                  )}
+
+                  {/* Delete - owner or sender */}
+                  {(isOwner || r.senderId === currentUser?.id) && (
+                    <Btn variant="danger" className="h-8 px-3 text-xs ms-auto" onClick={() => {
+                      mutate(prev => ({ ...prev, reports: prev.reports.filter(x => x.id !== r.id) }), language === "ar" ? "تم الحذف" : "Deleted");
+                      void deleteReportRemote(r.id);
+                    }}>🗑 {language === "ar" ? "حذف" : "Delete"}</Btn>
+                  )}
+                </div>
+              </Panel>
+            );
+          })
+        }
       </div>
       {visibleReports.length > REPORTS_PER_PAGE && (
         <div className="flex justify-center gap-2">

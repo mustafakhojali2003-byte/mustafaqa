@@ -23,11 +23,17 @@ export interface Building {
   lat?: number; lng?: number;
 }
 
+export interface ReportComment {
+  id: string; authorId: string; authorName: string; text: string; time: string;
+}
+
 export interface Report {
   id: string; buildingId: string; text: string; senderId: string;
   senderName: string; senderEmail: string; senderPhone: string;
   time: string; status: ReportStatus; mediaUrl?: string;
   mediaKind?: "image" | "video"; fileName?: string;
+  comments?: ReportComment[];
+  editedAt?: string;
 }
 
 export interface AlertLog {
