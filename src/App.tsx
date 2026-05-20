@@ -511,15 +511,15 @@ export default function App() {
   }, [mergedShifts, shiftFilter, isGuard, currentUser]);
   const myShift = useMemo(() => isGuard && currentUser ? mergedShifts.find(s => s.guardId === currentUser.id && s.date === today()) : null, [currentUser, isGuard, mergedShifts]);
   const hasActiveEmergency = useMemo(() => {
-    // Use 'stopped' field from Firebase (persists across sessions)
-    // Fall back to local stoppedAlertIds for immediate UI response
-    const hasActiveCritical = mergedAlerts.some(a =>
+    // Only FIRE alerts + SOS trigger emergency state
+    const hasActiveFireAlert = mergedAlerts.some(a =>
       a.severity === "critical" &&
+      (a.status.includes("🔥") || a.status.includes("Fire") || a.status.includes("حريق")) &&
       !(a as AlertLog & { stopped?: boolean }).stopped &&
       !stoppedAlertIds.has(a.id)
     );
     const hasActiveSOS = mergedSOSEvents.some(s => !s.resolved);
-    return hasActiveCritical || hasActiveSOS;
+    return hasActiveFireAlert || hasActiveSOS;
   }, [mergedAlerts, mergedSOSEvents, stoppedAlertIds]);
 
   const insights = useMemo(() => analyzeData(mergedReports, mergedShifts, mergedViolations, mergedSOSEvents, mergedAttendance, snapshot.buildings), [mergedReports, mergedShifts, mergedViolations, mergedSOSEvents, mergedAttendance, snapshot.buildings]);
@@ -758,9 +758,12 @@ export default function App() {
       const latest = mergedAlerts[0];
       const isCritical = latest.severity === "critical";
       const isWarn = latest.severity === "warning";
+      // Fire = siren. Flood/Other = normal sound only
+      const isFireAlert = isCritical &&
+        (latest.status.includes("🔥") || latest.status.includes("Fire") || latest.status.includes("حريق"));
       // Don't re-trigger if THIS user sent it (they already triggered sound)
       if (latest.sender !== currentUser.name) {
-        if (isCritical) {
+        if (isFireAlert) {
           startEmergencySound();
           setEmergencyActive(true);
           vibrateEmergency();
@@ -1215,6 +1218,7 @@ export default function App() {
     const onlineGuards = guardUsers.filter(u => activeUserIds.includes(u.id));
     const hasEmergency = mergedAlerts.some(a =>
       a.severity === "critical" &&
+      (a.status.includes("🔥") || a.status.includes("Fire") || a.status.includes("حريق")) &&
       !(a as AlertLog & { stopped?: boolean }).stopped &&
       !stoppedAlertIds.has(a.id)
     ) || mergedSOSEvents.some(s => !s.resolved);
@@ -2894,7 +2898,7 @@ export default function App() {
       </Panel>
 
       {/* Active critical banner + master stop */}
-      {(emergencyActive || mergedAlerts.some(a => a.severity === "critical" && !(a as AlertLog & { stopped?: boolean }).stopped && !stoppedAlertIds.has(a.id))) && (
+      {(emergencyActive || mergedAlerts.some(a => a.severity === "critical" && (a.status.includes("🔥") || a.status.includes("Fire") || a.status.includes("حريق")) && !(a as AlertLog & { stopped?: boolean }).stopped && !stoppedAlertIds.has(a.id))) && (
         <div className="rounded-2xl border border-red-500/50 bg-red-600/20 p-4 flex flex-wrap items-center gap-3">
           <span className="text-3xl animate-pulse">🚨</span>
           <div className="flex-1">
