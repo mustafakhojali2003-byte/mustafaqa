@@ -394,14 +394,6 @@ export default function App() {
     return Array.from(map.values()).sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
   }, [snapshot.violations, remoteViolations]);
 
-  // Computed at component level for header banner
-  const hasActiveEmergency = useMemo(() =>
-    mergedAlerts.some(a => a.severity === "critical" && !stoppedAlertIds.has(a.id)) ||
-    mergedSOSEvents.some(s => !s.resolved) ||
-    emergencyActive,
-    [mergedAlerts, mergedSOSEvents, emergencyActive, stoppedAlertIds]
-  );
-
   const mergedSOSEvents = useMemo(() => {
     const map = new Map<string, SOSEvent>();
     snapshot.sosEvents.forEach(s => map.set(s.id, s));
@@ -459,6 +451,13 @@ export default function App() {
     return shiftFilter === "today" ? base.filter(s => s.date === today()) : base;
   }, [mergedShifts, shiftFilter, isGuard, currentUser]);
   const myShift = useMemo(() => isGuard && currentUser ? mergedShifts.find(s => s.guardId === currentUser.id && s.date === today()) : null, [currentUser, isGuard, mergedShifts]);
+  const hasActiveEmergency = useMemo(() =>
+    mergedAlerts.some(a => a.severity === "critical" && !stoppedAlertIds.has(a.id)) ||
+    mergedSOSEvents.some(s => !s.resolved) ||
+    emergencyActive,
+    [mergedAlerts, mergedSOSEvents, emergencyActive, stoppedAlertIds]
+  );
+
   const insights = useMemo(() => analyzeData(mergedReports, mergedShifts, mergedViolations, mergedSOSEvents, mergedAttendance, snapshot.buildings), [mergedReports, mergedShifts, mergedViolations, mergedSOSEvents, mergedAttendance, snapshot.buildings]);
 
   // ─── Effects ─────────────────────────────────────────────────────────────────
@@ -1128,7 +1127,7 @@ export default function App() {
         {/* ── Summary Cards ── */}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {/* Guards online */}
-          <Panel className={`min-h-0 cursor-pointer hover:border-emerald-400/30 transition ${onlineGuards.length > 0 ? "border-emerald-500/20" : ""}`} onClick={() => setActiveTab("users")}>
+          <div className={`rounded-[28px] border bg-[#0b132b]/90 p-5 min-h-0 cursor-pointer hover:border-emerald-400/30 transition ${onlineGuards.length > 0 ? "border-emerald-500/20" : "border-white/10"}`} onClick={() => setActiveTab("users")}>
             <div className="flex items-start justify-between">
               <div>
                 <div className="text-3xl font-black text-emerald-400">{onlineGuards.length}<span className="text-slate-500 text-lg font-normal">/{guardUsers.length}</span></div>
@@ -1137,10 +1136,10 @@ export default function App() {
               <span className="text-2xl">👮</span>
             </div>
             {onlineGuards.length > 0 && <div className="mt-2 text-xs text-emerald-400">● {language === "ar" ? "نشط الآن" : "Active now"}</div>}
-          </Panel>
+          </div>
 
           {/* Today reports */}
-          <Panel className="min-h-0 cursor-pointer hover:border-sky-400/30 transition" onClick={() => setActiveTab("reports")}>
+          <div className="rounded-[28px] border border-white/10 bg-[#0b132b]/90 p-5 min-h-0 cursor-pointer hover:border-sky-400/30 transition" onClick={() => setActiveTab("reports")}>
             <div className="flex items-start justify-between">
               <div>
                 <div className="text-3xl font-black text-sky-400">{todayReports.length}</div>
@@ -1151,10 +1150,10 @@ export default function App() {
             {todayReports.filter(r => r.status === "critical").length > 0 && (
               <div className="mt-2 text-xs text-red-400">🚨 {todayReports.filter(r => r.status === "critical").length} {language === "ar" ? "حرج" : "critical"}</div>
             )}
-          </Panel>
+          </div>
 
           {/* Today visitors */}
-          <Panel className="min-h-0 cursor-pointer hover:border-amber-400/30 transition" onClick={() => setActiveTab("visitors")}>
+          <div className="rounded-[28px] border border-white/10 bg-[#0b132b]/90 p-5 min-h-0 cursor-pointer hover:border-amber-400/30 transition" onClick={() => setActiveTab("visitors")}>
             <div className="flex items-start justify-between">
               <div>
                 <div className="text-3xl font-black text-amber-400">{next24hVisitors.length}</div>
@@ -1162,11 +1161,11 @@ export default function App() {
               </div>
               <span className="text-2xl">🎫</span>
             </div>
-          </Panel>
+          </div>
 
           {/* Pending accounts (owner only) / Open violations (admin) */}
           {isOwner ? (
-            <Panel className={`min-h-0 cursor-pointer transition ${pendingUsers.length > 0 ? "border-amber-500/40 bg-amber-500/5 hover:border-amber-400/60 animate-pulse" : "hover:border-white/20"}`} onClick={() => setActiveTab("users")}>
+            <div className={`rounded-[28px] border bg-[#0b132b]/90 p-5 min-h-0 cursor-pointer transition ${pendingUsers.length > 0 ? "border-amber-500/40 bg-amber-500/5 hover:border-amber-400/60 animate-pulse" : "border-white/10 hover:border-white/20"}`} onClick={() => setActiveTab("users")}>
               <div className="flex items-start justify-between">
                 <div>
                   <div className={`text-3xl font-black ${pendingUsers.length > 0 ? "text-amber-400" : "text-slate-500"}`}>{pendingUsers.length}</div>
@@ -1175,9 +1174,9 @@ export default function App() {
                 <span className="text-2xl">⏳</span>
               </div>
               {pendingUsers.length > 0 && <div className="mt-2 text-xs text-amber-400">{language === "ar" ? "تحتاج موافقتك" : "Awaiting your approval"}</div>}
-            </Panel>
+            </div>
           ) : (
-            <Panel className="min-h-0 cursor-pointer hover:border-white/20 transition" onClick={() => setActiveTab("violations")}>
+            <div className="rounded-[28px] border border-white/10 bg-[#0b132b]/90 p-5 min-h-0 cursor-pointer hover:border-white/20 transition" onClick={() => setActiveTab("violations")}>
               <div className="flex items-start justify-between">
                 <div>
                   <div className="text-3xl font-black text-amber-400">{mergedViolations.filter(v => !v.acknowledged).length}</div>
@@ -1185,28 +1184,28 @@ export default function App() {
                 </div>
                 <span className="text-2xl">⚠️</span>
               </div>
-            </Panel>
+            </div>
           )}
         </div>
 
         {/* ── Secondary stats ── */}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Panel className="min-h-0 p-4 cursor-pointer hover:border-white/20" onClick={() => setActiveTab("shifts")}>
+          <div className="rounded-[28px] border border-white/10 bg-[#0b132b]/90 p-4 min-h-0 cursor-pointer hover:border-white/20 transition" onClick={() => setActiveTab("shifts")}>
             <div className="text-2xl font-black text-white">{mergedShifts.filter(s => s.date === todayStr).length}</div>
             <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "نوبات اليوم" : "Today Shifts"}</div>
-          </Panel>
-          <Panel className="min-h-0 p-4 cursor-pointer hover:border-white/20" onClick={() => setActiveTab("alerts")}>
+          </div>
+          <div className="rounded-[28px] border border-white/10 bg-[#0b132b]/90 p-4 min-h-0 cursor-pointer hover:border-white/20 transition" onClick={() => setActiveTab("alerts")}>
             <div className="text-2xl font-black text-red-400">{mergedSOSEvents.filter(s => !s.resolved).length}</div>
             <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "SOS نشط" : "Active SOS"}</div>
-          </Panel>
-          <Panel className="min-h-0 p-4 cursor-pointer hover:border-white/20" onClick={() => setActiveTab("reports")}>
+          </div>
+          <div className="rounded-[28px] border border-white/10 bg-[#0b132b]/90 p-4 min-h-0 cursor-pointer hover:border-white/20 transition" onClick={() => setActiveTab("reports")}>
             <div className="text-2xl font-black text-amber-400">{mergedReports.filter(r => r.status === "warning").length}</div>
             <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "تحذيرات" : "Warnings"}</div>
-          </Panel>
-          <Panel className="min-h-0 p-4 cursor-pointer hover:border-white/20" onClick={() => setActiveTab("reports")}>
+          </div>
+          <div className="rounded-[28px] border border-white/10 bg-[#0b132b]/90 p-4 min-h-0 cursor-pointer hover:border-white/20 transition" onClick={() => setActiveTab("reports")}>
             <div className="text-2xl font-black text-red-300">{mergedReports.filter(r => r.status === "critical").length}</div>
             <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "تقارير حرجة" : "Critical Reports"}</div>
-          </Panel>
+          </div>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-3">
