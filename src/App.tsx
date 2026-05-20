@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import AuthScreen from "./components/AuthScreen";
 import QrScannerModal from "./components/QrScannerModal";
 import VisitorManagementModal from "./components/VisitorManagementModal";
@@ -7,7 +7,7 @@ import { deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, sa
 import { exportReportsPDF, exportShiftReportPDF, exportFullDashboardPDF } from "./services/pdfService";
 import { generateVisitorQR, generateBuildingQR } from "./services/qrService";
 import { analyzeData } from "./services/analyticsService";
-import type { AlertLog, AppSnapshot, AttendanceRecord, AuditEntry, AuditSeverity, Building, ChatMessage, Conversation, Language, NewAccountPayload, Pair, Report, ReportStatus, Role, Shift, SOSEvent, Tab, Toast, ToastTone, User, Violation, VisitorFormPayload, VisitorRecord } from "./types/security";
+import type { AlertLog, AppSnapshot, AttendanceRecord, AuditEntry, AuditSeverity, Building, ChatMessage, Conversation, Language, NewAccountPayload, Pair, Report, ReportStatus, Role, Shift, SOSEvent, Tab, Task, Toast, ToastTone, User, Violation, VisitorFormPayload, VisitorRecord } from "./types/security";
 
 const STORAGE_KEY = "mustafaqa-v1";
 const SESSION_KEY = "mustafaqa-session-v1";
@@ -257,6 +257,10 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [emergencyActive, setEmergencyActive] = useState(false);
   const [sosActive, setSosActive] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [chatMediaUploading, setChatMediaUploading] = useState(false);
+  const [selectedBuildingId, setSelectedBuildingId] = useState<string | null>(null);
+  const chatFileRef = useRef<HTMLInputElement | null>(null);
   const [visitorQrMap, setVisitorQrMap] = useState<Record<string, string>>({});
   const [shiftFilter, setShiftFilter] = useState<"all" | "today">("today");
   const [violationForm, setViolationForm] = useState({ guardId: "", type: "", description: "", severity: "minor" as Violation["severity"], buildingId: "" });
@@ -492,6 +496,8 @@ export default function App() {
 
   const handleCreateAccount = async (payload: NewAccountPayload) => {
     setAuthError(null); setAuthInfo(null);
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    if (!emailRegex.test(payload.email.trim())) return setAuthError(language === "ar" ? "يرجى إدخال بريد إلكتروني صحيح (مثال: name@gmail.com)" : "Please enter a valid email (e.g. name@gmail.com)");
     if (snapshot.users.some(u => u.email.toLowerCase() === payload.email.trim().toLowerCase())) return setAuthError(language === "ar" ? "البريد مستخدم بالفعل" : "Email already registered");
     const newUser: User = {
       id: `user-${Date.now()}`, name: payload.name.trim(), email: payload.email.trim(),
@@ -1084,8 +1090,37 @@ export default function App() {
                   {(u.violations ?? 0) > 0 && <Badge className="border-red-400/30 bg-red-500/15 text-red-300">⚠️ {u.violations} {language === "ar" ? "مخالفات" : "violations"}</Badge>}
                 </div>
                 <div className="mt-1 text-sm text-slate-400">{u.email} · ⭐ {u.rating}</div>
+                {isOwner && u.id !== currentUser?.id && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {Object.keys(permissionLabels).map(p => {
+                      const hasPerm = (u.permissions ?? []).includes(p);
+                      return (
+                        <button key={p} onClick={() => {
+                          const newPerms = hasPerm ? u.permissions.filter(x => x !== p) : [...(u.permissions ?? []), p];
+                          mutate(prev => ({ ...prev, users: prev.users.map(x => x.id === u.id ? { ...x, permissions: newPerms } : x) }));
+                          void saveApprovedUser({ ...u, permissions: newPerms });
+                        }} className={`rounded-full border px-2 py-0.5 text-xs font-bold transition ${hasPerm ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : "border-white/10 bg-white/5 text-slate-500 hover:bg-white/10"}`}>
+                          {pair(language, permissionLabels[p])}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              {isOwner && u.id !== currentUser?.id && <Btn variant="danger" className="h-8 px-3 text-xs" onClick={() => deleteUser(u.id)}>{language === "ar" ? "حذف" : "Delete"}</Btn>}
+              {isOwner && u.id !== currentUser?.id && (
+                <div className="flex gap-2">
+                  <SelInput className="h-8 w-28 text-xs px-2" value={u.role} onChange={e => {
+                    const newRole = e.target.value as Role;
+                    mutate(prev => ({ ...prev, users: prev.users.map(x => x.id === u.id ? { ...x, role: newRole } : x) }), language === "ar" ? "تم تغيير الدور" : "Role changed");
+                    void saveApprovedUser({ ...u, role: newRole });
+                  }}>
+                    <option value="guard">Guard</option>
+                    <option value="admin">Admin</option>
+                    <option value="owner">Owner</option>
+                  </SelInput>
+                  <Btn variant="danger" className="h-8 px-3 text-xs" onClick={() => deleteUser(u.id)}>{language === "ar" ? "حذف" : "Delete"}</Btn>
+                </div>
+              )}
             </div>
           </Panel>
         ))}
@@ -1093,38 +1128,120 @@ export default function App() {
     </div>
   );
 
+  const sendChatMedia = async (file: File) => {
+    if (!currentUser || !activeConversation) return;
+    setChatMediaUploading(true);
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const kind: ChatMessage["kind"] = file.type.startsWith("video") ? "image" : "image";
+      const msg: ChatMessage = { id: `msg-${Date.now()}`, senderId: currentUser.id, kind, imageUrl: dataUrl, time: chatTime(language) };
+      mutate(prev => {
+        const exists = prev.conversations.find(c => c.id === activeConversation.id);
+        const updated = exists ? { ...exists, messages: [...exists.messages, msg] } : { ...activeConversation, messages: [msg] };
+        void saveConversation(updated);
+        if (exists) return { ...prev, conversations: prev.conversations.map(c => c.id === activeConversation.id ? updated : c) };
+        return { ...prev, conversations: [updated, ...prev.conversations] };
+      });
+    } catch { showToast(language === "ar" ? "فشل رفع الملف" : "Upload failed", "danger"); }
+    setChatMediaUploading(false);
+  };
+
+  const startVoiceRecord = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const recorder = new MediaRecorder(stream);
+      recorderRef.current = recorder;
+      recorderChunksRef.current = [];
+      recorder.ondataavailable = e => recorderChunksRef.current.push(e.data);
+      recorder.onstop = async () => {
+        if (!currentUser || !activeConversation) return;
+        const blob = new Blob(recorderChunksRef.current, { type: "audio/webm" });
+        const audioUrl = await fileToDataUrl(new File([blob], "voice.webm"));
+        const msg: ChatMessage = { id: `msg-${Date.now()}`, senderId: currentUser.id, kind: "audio", audioUrl, time: chatTime(language) };
+        mutate(prev => {
+          const exists = prev.conversations.find(c => c.id === activeConversation.id);
+          const updated = exists ? { ...exists, messages: [...exists.messages, msg] } : { ...activeConversation, messages: [msg] };
+          void saveConversation(updated);
+          if (exists) return { ...prev, conversations: prev.conversations.map(c => c.id === activeConversation.id ? updated : c) };
+          return { ...prev, conversations: [updated, ...prev.conversations] };
+        });
+        stream.getTracks().forEach(t => t.stop());
+      };
+      recorder.start();
+      setIsRecording(true);
+    } catch { showToast(language === "ar" ? "تعذر الوصول للميكروفون" : "Microphone denied", "danger"); }
+  };
+
+  const stopVoiceRecord = () => {
+    recorderRef.current?.stop();
+    setIsRecording(false);
+  };
+
   const renderChat = () => {
-    const [chatInput, setChatInput] = useState("");
     return (
       <div className="space-y-4">
         <SectionHead title={language === "ar" ? "الدردشة" : "Chat"} />
+        <input ref={chatFileRef} type="file" accept="image/*,video/*" className="hidden" onChange={async e => { if (e.target.files?.[0]) { await sendChatMedia(e.target.files[0]); e.target.value = ""; } }} />
         <div className="flex flex-col gap-4 lg:flex-row">
           <Panel className="lg:w-72 lg:flex-shrink-0">
             <div className="mb-3 font-black text-white">{language === "ar" ? "المحادثات" : "Conversations"}</div>
             <div className="space-y-2">
               {visibleConversations.map(c => (
-                <button key={c.id} onClick={() => setConversationId(c.id)} className={`w-full rounded-2xl p-3 text-left transition ${c.id === conversationId ? "border border-amber-400/40 bg-amber-500/10" : "border border-transparent bg-white/5 hover:bg-white/10"}`}>
+                <button key={c.id} onClick={() => setConversationId(c.id)} className={`w-full rounded-2xl p-3 text-start transition ${c.id === conversationId ? "border border-amber-400/40 bg-amber-500/10" : "border border-transparent bg-white/5 hover:bg-white/10"}`}>
                   <div className="font-bold text-white">{c.participantName}</div>
                   <div className="text-xs text-slate-400">{pair(language, roleLabels[c.participantRole])}</div>
-                  {c.messages.length > 0 && <div className="mt-1 truncate text-xs text-slate-500">{c.messages[c.messages.length - 1].text?.slice(0, 30)}</div>}
+                  {c.messages.length > 0 && <div className="mt-1 truncate text-xs text-slate-500">{(c.messages[c.messages.length - 1].text ?? (c.messages[c.messages.length - 1].kind === "audio" ? "🎙️ Voice" : "📷 Media"))?.slice(0, 30)}</div>}
                 </button>
               ))}
             </div>
           </Panel>
           <Panel className="flex-1">
             {activeConversation ? (
-              <div className="flex h-[500px] flex-col">
+              <div className="flex h-[520px] flex-col">
                 <div className="mb-4 border-b border-white/10 pb-3 font-black text-white">{activeConversation.participantName}</div>
-                <div className="flex-1 overflow-y-auto space-y-3">
-                  {activeConversation.messages.length === 0 ? <div className="flex h-full items-center justify-center text-slate-500">{language === "ar" ? "لا رسائل بعد" : "No messages yet"}</div> : activeConversation.messages.map(m => {
-                    const isMine = m.senderId === currentUser?.id;
-                    return <div key={m.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}><div className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm ${isMine ? "bg-amber-500/20 text-amber-100" : "bg-white/10 text-white"}`}>{m.text}<div className="mt-1 text-xs opacity-50">{m.time}</div></div></div>;
-                  })}
+                <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+                  {activeConversation.messages.length === 0
+                    ? <div className="flex h-full items-center justify-center text-slate-500">{language === "ar" ? "لا رسائل بعد" : "No messages yet"}</div>
+                    : activeConversation.messages.map(m => {
+                        const isMine = m.senderId === currentUser?.id;
+                        return (
+                          <div key={m.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
+                            <div className={`max-w-[78%] rounded-2xl px-4 py-2 text-sm ${isMine ? "bg-amber-500/20 text-amber-100" : "bg-white/10 text-white"}`}>
+                              {m.kind === "text" && <p>{m.text}</p>}
+                              {m.kind === "image" && m.imageUrl && <img src={m.imageUrl} alt="media" className="max-h-48 rounded-xl object-cover" />}
+                              {m.kind === "audio" && m.audioUrl && <audio controls src={m.audioUrl} className="max-w-[220px]" />}
+                              <div className="mt-1 text-xs opacity-50">{m.time}</div>
+                            </div>
+                          </div>
+                        );
+                      })
+                  }
                 </div>
-                <div className="mt-4 flex gap-2">
-                  <TxtInput value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(chatInput); setChatInput(""); } }} placeholder={language === "ar" ? "اكتب رسالة..." : "Type a message..."} className="flex-1" />
+                <div className="mt-3 flex items-center gap-2">
+                  <TxtInput
+                    value={chatInput}
+                    onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(chatInput); setChatInput(""); } }}
+                    placeholder={language === "ar" ? "اكتب رسالة..." : "Type a message..."}
+                    className="flex-1"
+                  />
+                  <button title="صورة/فيديو" onClick={() => chatFileRef.current?.click()} className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-lg hover:bg-white/10">
+                    {chatMediaUploading ? "⏳" : "📷"}
+                  </button>
+                  <button
+                    title={isRecording ? (language === "ar" ? "إيقاف التسجيل" : "Stop") : (language === "ar" ? "رسالة صوتية" : "Voice")}
+                    onMouseDown={() => { void startVoiceRecord(); }}
+                    onMouseUp={stopVoiceRecord}
+                    onTouchStart={() => { void startVoiceRecord(); }}
+                    onTouchEnd={stopVoiceRecord}
+                    className={`flex h-11 w-11 items-center justify-center rounded-2xl border text-lg transition ${isRecording ? "border-red-500/50 bg-red-500/20 animate-pulse" : "border-white/10 bg-white/5 hover:bg-white/10"}`}
+                  >
+                    🎙️
+                  </button>
                   <Btn onClick={() => { sendMessage(chatInput); setChatInput(""); }}>{language === "ar" ? "إرسال" : "Send"}</Btn>
                 </div>
+                {isRecording && <div className="mt-2 text-center text-xs text-red-400 animate-pulse">⏺ {language === "ar" ? "جارٍ التسجيل... أفلت لإرسال" : "Recording... release to send"}</div>}
               </div>
             ) : <EmptyMsg title={language === "ar" ? "اختر محادثة" : "Select a conversation"} text="" />}
           </Panel>
@@ -1180,11 +1297,18 @@ export default function App() {
 
   const renderAttendance = () => (
     <div className="space-y-6">
-      <SectionHead title={language === "ar" ? "الحضور" : "Attendance"} />
+      <SectionHead title={language === "ar" ? "الحضور" : "Attendance"} subtitle={language === "ar" ? "يجب مسح رمز QR للمبنى المخصص لك" : "Scan the QR code of your assigned building"} />
       <Panel>
-        <div className="flex flex-wrap gap-3">
-          <Btn onClick={clockIn}>{language === "ar" ? "تسجيل حضور يدوي" : "Manual Clock In"}</Btn>
-          <Btn variant="secondary" onClick={() => { setQrContext("attendance"); setQrModalOpen(true); }}>📷 {language === "ar" ? "مسح QR" : "Scan QR"}</Btn>
+        <div className="flex flex-col items-center gap-4 py-4">
+          <div className="text-6xl">📷</div>
+          <p className="text-center text-slate-300 text-sm max-w-sm">
+            {language === "ar"
+              ? `امسح رمز QR الخاص بـ ${formatBuilding(snapshot.buildings.find(b => b.id === currentUser?.assignedBuildingId), language)} لتسجيل حضورك`
+              : `Scan the QR code of ${formatBuilding(snapshot.buildings.find(b => b.id === currentUser?.assignedBuildingId), language)} to clock in`}
+          </p>
+          <Btn onClick={() => { setQrContext("attendance"); setQrModalOpen(true); }} className="h-14 px-8 text-lg">
+            📷 {language === "ar" ? "مسح QR الآن" : "Scan QR Now"}
+          </Btn>
         </div>
       </Panel>
       <div className="space-y-3">
@@ -1200,26 +1324,82 @@ export default function App() {
     </div>
   );
 
-  const renderBuildings = () => (
-    <div className="space-y-6">
-      <SectionHead title={language === "ar" ? "المباني" : "Buildings"} />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {snapshot.buildings.map(b => (
-          <Panel key={b.id}>
-            <div className="mb-3 flex items-center justify-between">
-              <div className="font-black text-amber-400">{language === "ar" ? b.nameAr : b.nameEn}</div>
-              <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={async () => {
-                const qr = await generateBuildingQR(b.id, b.nameEn).catch(() => "");
-                if (qr) { const a = document.createElement("a"); a.href = qr; a.download = `qr-${b.id}.png`; a.click(); showToast(language === "ar" ? "تم تنزيل QR" : "QR Downloaded"); }
-              }}>QR ⬇</Btn>
-            </div>
-            <div className="text-sm text-slate-400">{b.area}</div>
-            <div className="mt-2 text-xs text-slate-500 font-mono">{b.qrCode}</div>
-          </Panel>
-        ))}
+  const renderBuildings = () => {
+    const building = selectedBuildingId ? snapshot.buildings.find(b => b.id === selectedBuildingId) : null;
+    const buildingReports = building
+      ? mergedReports.filter(r => r.buildingId === building.id && (isGuard ? r.senderId === currentUser?.id : true))
+      : [];
+
+    if (building) return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <Btn variant="secondary" onClick={() => setSelectedBuildingId(null)}>← {language === "ar" ? "رجوع" : "Back"}</Btn>
+          <SectionHead title={language === "ar" ? building.nameAr : building.nameEn} subtitle={building.area} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <StatCard label={language === "ar" ? "إجمالي التقارير" : "Total Reports"} value={buildingReports.length} />
+          <StatCard label={language === "ar" ? "حرجة" : "Critical"} value={buildingReports.filter(r => r.status === "critical").length} color="text-red-300" />
+          <StatCard label={language === "ar" ? "تحذير" : "Warning"} value={buildingReports.filter(r => r.status === "warning").length} color="text-amber-300" />
+        </div>
+        {buildingReports.length === 0
+          ? <EmptyMsg title={language === "ar" ? "لا تقارير" : "No Reports"} text="" />
+          : buildingReports.map(r => (
+            <Panel key={r.id}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className={getStatusBadgeClass(r.status)}>{r.status}</Badge>
+                    <span className="font-black text-white">{r.senderName}</span>
+                    <span className="text-xs text-slate-400">{r.time}</span>
+                  </div>
+                  {(isOwner || isAdmin) && (
+                    <div className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
+                      <InfoRow label={language === "ar" ? "البريد" : "Email"} value={r.senderEmail} />
+                      <InfoRow label={language === "ar" ? "الهاتف" : "Phone"} value={r.senderPhone} />
+                    </div>
+                  )}
+                  <p className="mt-2 text-sm text-slate-300">{r.text}</p>
+                  {r.mediaUrl && r.mediaKind === "image" && <img src={r.mediaUrl} alt="media" className="mt-3 max-h-48 rounded-xl object-cover" />}
+                </div>
+              </div>
+            </Panel>
+          ))
+        }
       </div>
-    </div>
-  );
+    );
+
+    return (
+      <div className="space-y-6">
+        <SectionHead title={language === "ar" ? "المباني" : "Buildings"} />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {snapshot.buildings.map(b => {
+            const guard = approvedUsers.find(u => u.assignedBuildingId === b.id);
+            const bReports = mergedReports.filter(r => r.buildingId === b.id);
+            const criticals = bReports.filter(r => r.status === "critical").length;
+            return (
+              <Panel key={b.id} className="cursor-pointer hover:border-amber-400/30 transition" onClick={() => setSelectedBuildingId(b.id)}>
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="font-black text-amber-400">{language === "ar" ? b.nameAr : b.nameEn}</div>
+                  <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={async e => {
+                    e.stopPropagation();
+                    const qr = await generateBuildingQR(b.id, b.nameEn).catch(() => "");
+                    if (qr) { const a = document.createElement("a"); a.href = qr; a.download = `qr-${b.id}.png`; a.click(); showToast(language === "ar" ? "تم تنزيل QR" : "QR Downloaded"); }
+                  }}>QR ⬇</Btn>
+                </div>
+                <div className="text-sm text-slate-400">{b.area}</div>
+                {guard && <div className="mt-2 text-sm text-emerald-400">👮 {guard.name}</div>}
+                <div className="mt-2 flex gap-2">
+                  <Badge className="border-slate-400/30 bg-slate-500/15 text-slate-300">{bReports.length} {language === "ar" ? "تقرير" : "reports"}</Badge>
+                  {criticals > 0 && <Badge className="border-red-400/30 bg-red-500/15 text-red-300">🚨 {criticals} {language === "ar" ? "حرج" : "critical"}</Badge>}
+                </div>
+                <div className="mt-2 text-xs text-slate-600 font-mono">{b.qrCode}</div>
+              </Panel>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   const renderTasks = () => (
     <div className="space-y-6">
@@ -1418,5 +1598,3 @@ export default function App() {
   );
 }
 
-// Task type needed
-interface Task { id: string; title: string; details: string; assignedTo: string; assignedName: string; status: "pending" | "in-progress" | "done"; createdAt: string; dueDate?: string; priority?: "low" | "medium" | "high"; }
