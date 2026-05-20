@@ -286,6 +286,7 @@ export default function App() {
   const [editUserId, setEditUserId] = useState<string | null>(null);
   const [editUserForm, setEditUserForm] = useState({ name: "", phone: "", buildingId: "", role: "guard" as Role });
   const [changePwForm, setChangePwForm] = useState({ current: "", newPw: "", confirm: "" });
+  const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [changePwError, setChangePwError] = useState("");
   const deviceId = typeof window !== "undefined" ? (window.localStorage.getItem("mustafaqa-device-id") || (() => { const id = "DEV-" + Math.random().toString(36).slice(2,8).toUpperCase(); window.localStorage.setItem("mustafaqa-device-id", id); return id; })()) : "—";
   const chatFileRef = useRef<HTMLInputElement | null>(null);
@@ -531,8 +532,16 @@ export default function App() {
     if (!currentUserId) return;
     setActiveUserIds(prev => Array.from(new Set([...prev.filter(id => id !== currentUserId), currentUserId])));
 
-    // Initialize FCM for push notifications (works even when app is closed)
-    void initFCM(currentUserId);
+    // Request notification permission immediately on login
+    if ("Notification" in window) {
+      if (Notification.permission === "default") {
+        // Show our custom modal first, then browser prompt
+        setShowPermissionModal(true);
+      } else if (Notification.permission === "granted") {
+        // Already granted - just init FCM silently
+        void initFCM(currentUserId);
+      }
+    }
 
     // Listen to foreground FCM messages
     const unsubFCM = listenForegroundMessages((title, body, type) => {
@@ -718,6 +727,11 @@ export default function App() {
     setCurrentUserId(user.id);
     setActiveTab(user.role === "guard" ? "reports" : "dashboard");
     mutate(prev => ({ ...prev, auditLog: [createAuditEntry(user, "login", "session", "تسجيل دخول", "info"), ...prev.auditLog] }));
+    // Show permission modal after login (handled by useEffect watching currentUserId)
+    // But if already granted, init FCM immediately
+    if ("Notification" in window && Notification.permission === "granted") {
+      void initFCM(user.id);
+    }
   };
 
   const handleCreateAccount = async (payload: NewAccountPayload) => {
@@ -740,6 +754,10 @@ export default function App() {
       await savePendingUser(newUser);
       mutate(prev => ({ ...prev, users: [newUser, ...prev.users], auditLog: [createAuditEntry(null, "account_request", newUser.email, "طلب حساب جديد", "warning"), ...prev.auditLog] }));
       setAuthInfo(language === "ar" ? "تم إرسال الطلب وهو بانتظار موافقة المالك" : "Request submitted — pending owner approval");
+      // Request notification permission after registration
+      if ("Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission().catch(() => undefined);
+      }
       // Notify owner via Worker
       const owner = approvedUsers.find(u => u.role === "owner");
       if (owner) void sendPushViaWorker("⏳ طلب حساب جديد", `${newUser.name} — ${newUser.email}`, "pending_user", owner.id);
@@ -2942,6 +2960,53 @@ export default function App() {
         </div>
       )}
       {toast && <div className="fixed bottom-4 left-1/2 z-50 w-[min(90vw,460px)] -translate-x-1/2"><div className={`rounded-2xl border px-4 py-3 text-sm font-semibold shadow-2xl backdrop-blur ${getToastClass(toast.tone)}`}>{toast.text}</div></div>}
+
+      {/* ── Permission Modal ── */}
+      {showPermissionModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.85)" }}>
+          <div className="mx-4 w-full max-w-sm rounded-[28px] border border-amber-400/30 bg-[#0b132b] p-6 shadow-2xl">
+            <div className="mb-4 flex justify-center"><div className="flex h-20 w-20 items-center justify-center rounded-full border border-amber-400/30 bg-amber-500/10 text-5xl">🔔</div></div>
+            <h2 className="mb-2 text-center text-xl font-black text-white">
+              {language === "ar" ? "تفعيل الإشعارات" : "Enable Notifications"}
+            </h2>
+            <p className="mb-6 text-center text-sm text-slate-400">
+              {language === "ar"
+                ? "للحصول على إشعارات الطوارئ والتقارير والمهام حتى عند إغلاق التطبيق — مثل واتساب تماماً"
+                : "Get emergency alerts, reports and task notifications even when the app is closed — just like WhatsApp"}
+            </p>
+            <div className="space-y-3">
+              <Btn className="w-full h-14 text-base" onClick={async () => {
+                setShowPermissionModal(false);
+                try {
+                  const perm = await Notification.requestPermission();
+                  setNotificationPermission(perm);
+                  if (perm === "granted" && currentUserId) {
+                    await initFCM(currentUserId);
+                    showToast(language === "ar" ? "✅ تم تفعيل الإشعارات!" : "✅ Notifications enabled!", "success");
+                  } else {
+                    showToast(language === "ar" ? "⚠️ لم يتم تفعيل الإشعارات" : "⚠️ Notifications not enabled", "danger");
+                  }
+                } catch { /* ignore */ }
+              }}>
+                🔔 {language === "ar" ? "السماح بالإشعارات" : "Allow Notifications"}
+              </Btn>
+              <button
+                onClick={async () => {
+                  setShowPermissionModal(false);
+                  // Still try to init FCM even if declined our modal
+                  if (currentUserId) void initFCM(currentUserId);
+                }}
+                className="w-full rounded-2xl border border-white/10 bg-white/5 py-3 text-sm text-slate-400 hover:bg-white/10 transition"
+              >
+                {language === "ar" ? "ليس الآن" : "Not now"}
+              </button>
+            </div>
+            <p className="mt-4 text-center text-xs text-slate-600">
+              {language === "ar" ? "يمكنك تفعيلها لاحقاً من الإعدادات" : "You can enable later from Settings"}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
