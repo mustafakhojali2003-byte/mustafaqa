@@ -400,7 +400,7 @@ export default function App() {
   const visibleTabs = useMemo((): Tab[] => {
     if (isGuard) return ["reports", "alerts", "buildings", "visitors", "attendance", "tasks", "chat", "patrol", "sos", "settings"];
     if (isAdmin) return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "tasks", "chat", "violations", "scores", "patrol", "settings"];
-    return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "attendance", "tasks", "chat", "analytics", "audit", "shifts", "violations", "sos", "system", "settings"];
+    return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "attendance", "tasks", "chat", "analytics", "audit", "violations", "scores", "patrol", "sos", "system", "settings"];
   }, [isAdmin, isGuard]);
 
   // ─── Merge remote + local for ALL collections ─────────────────────────────
@@ -535,7 +535,7 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get("tab") as Tab | null;
-    const validTabs: Tab[] = ["reports","alerts","chat","tasks","sos","visitors","shifts","users","buildings","dashboard","attendance","analytics","audit","system","settings","violations","map"];
+    const validTabs: Tab[] = ["reports","alerts","chat","tasks","sos","visitors","users","buildings","dashboard","attendance","analytics","audit","system","settings","violations","scores","patrol"];
     if (tab && validTabs.includes(tab)) {
       setActiveTab(tab);
       window.history.replaceState({}, "", "/");
@@ -1525,7 +1525,7 @@ export default function App() {
           {isOwner && <Btn onClick={() => setActiveTab("users")} variant="secondary" className="h-12">{language === "ar" ? "👥 إدارة المستخدمين" : "👥 Manage Users"}</Btn>}
           <Btn onClick={() => setActiveTab("alerts")} variant="secondary" className="h-12">{language === "ar" ? "🚨 إرسال إنذار" : "🚨 Send Alert"}</Btn>
           <Btn onClick={() => setActiveTab("visitors")} variant="secondary" className="h-12">{language === "ar" ? "🎫 إضافة زائر" : "🎫 Add Visitor"}</Btn>
-          <Btn onClick={() => setActiveTab("shifts")} variant="secondary" className="h-12">{language === "ar" ? "📅 النوبات" : "📅 Shifts"}</Btn>
+
         </div>
       </div>
     );
@@ -4042,7 +4042,6 @@ export default function App() {
       case "audit": return renderAudit();
       case "system": return renderSystem();
       case "settings": return renderSettings();
-      case "shifts": return renderShifts();
       case "violations": return renderViolations();
       case "map": return renderMap();
       case "sos": return renderSOS();
