@@ -2,7 +2,7 @@ import { getMessaging, getToken, onMessage, type Messaging } from "firebase/mess
 import { doc, setDoc } from "firebase/firestore";
 import { firebaseApp, firestore } from "./firebase";
 
-const VAPID_KEY = "BLBz_placeholder_replace_with_real_vapid_key";
+const VAPID_KEY = "BETZFbkWqKa2-oo8lavqp5r350ebPPtqZlkzt0lki5QDcbcnlPPttBVaTABVRSnMuFn4JwXZQ5qD_lOd96MjwBk";
 let messaging: Messaging | null = null;
 
 function getMessagingInstance(): Messaging | null {
