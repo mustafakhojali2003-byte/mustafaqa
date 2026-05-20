@@ -353,6 +353,9 @@ export default function App() {
     notes: "",
   });
   const [showShiftScheduler, setShowShiftScheduler] = useState(false);
+  const [attendanceFilter, setAttendanceFilter] = useState<"today"|"week"|"month"|"all">("today");
+  const [attendanceSearch, setAttendanceSearch] = useState("");
+  const [attendanceView, setAttendanceView] = useState<"list"|"grid">("list");
   const [endShiftNote, setEndShiftNote] = useState("");
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null);
 
@@ -1101,6 +1104,16 @@ export default function App() {
           .sort((a, b) => b.time.localeCompare(a.time));
         const lastRec = myRecs[0];
         const isIn = lastRec && !lastRec.checkOut;
+        // BLOCK: if already clocked IN + OUT today → reject 3rd scan
+        if (lastRec?.checkOut) {
+          showToast(
+            language === "ar"
+              ? "🔒 لقد سجلت دخولك وخروجك اليوم — لا يمكن المسح مرة أخرى"
+              : "🔒 You already clocked in & out today — no more scans allowed",
+            "danger"
+          );
+          return;
+        }
         if (isIn) {
           // CLOCK OUT
           const checkOutTime = nowStamp();
@@ -2935,7 +2948,39 @@ export default function App() {
     </div>
   );
 
-    const renderAttendance = () => (
+  const archiveAndDeleteOldAttendance = async () => {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 90);
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
+      const oldRecords = mergedAttendance.filter(a => a.time.slice(0, 10) < cutoffStr);
+      if (oldRecords.length === 0) {
+        showToast(language === "ar" ? "لا سجلات قديمة للحذف" : "No old records to archive", "info");
+        return;
+      }
+      // Export to Excel first
+      exportAttendanceExcel(oldRecords, approvedUsers, snapshot.buildings);
+      // Wait a moment then delete from Firebase + local
+      await new Promise(r => setTimeout(r, 1500));
+      for (const rec of oldRecords) {
+        try {
+          const { deleteDoc, doc } = await import("firebase/firestore");
+          const { firestore } = await import("./services/firebase");
+          await deleteDoc(doc(firestore, "attendance", rec.id));
+        } catch { /* ignore */ }
+      }
+      mutate(prev => ({
+        ...prev,
+        attendance: prev.attendance.filter(a => a.time.slice(0, 10) >= cutoffStr),
+      }));
+      showToast(
+        language === "ar"
+          ? `✅ تم تصدير وحذف ${oldRecords.length} سجل قديم (أكثر من 90 يوم)`
+          : `✅ Exported & deleted ${oldRecords.length} old records (90+ days)`,
+        "success"
+      );
+    };
+
+  const renderAttendance = () => (
     <div className="space-y-6">
       <SectionHead title={language === "ar" ? "الحضور" : "Attendance"} subtitle={language === "ar" ? "مسح QR المبنى المخصص لك فقط" : "Scan your assigned building QR only"} />
       {/* Today's status */}
@@ -3088,14 +3133,123 @@ export default function App() {
         </Panel>
       )}
 
-      {/* Attendance log */}
+      {/* Attendance log - with filters + grid/list toggle */}
       <Panel>
-        <div className="mb-3 font-black text-white">{language === "ar" ? "سجل الحضور" : "Attendance Log"}</div>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="font-black text-white">{language === "ar" ? "سجل الحضور" : "Attendance Log"}</div>
+          <div className="flex flex-wrap gap-2 items-center">
+            {/* View toggle */}
+            {!isGuard && (
+              <div className="flex rounded-xl border border-white/10 overflow-hidden">
+                <button onClick={() => setAttendanceView("list")} className={`px-3 py-1.5 text-xs font-bold transition ${attendanceView === "list" ? "bg-amber-500 text-black" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>☰ {language === "ar" ? "قائمة" : "List"}</button>
+                <button onClick={() => setAttendanceView("grid")} className={`px-3 py-1.5 text-xs font-bold transition ${attendanceView === "grid" ? "bg-amber-500 text-black" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>⊞ {language === "ar" ? "جدول" : "Grid"}</button>
+              </div>
+            )}
+            {/* Date filter */}
+            {(["today","week","month","all"] as const).map(f => (
+              <button key={f} onClick={() => setAttendanceFilter(f)}
+                className={`rounded-xl border px-3 py-1.5 text-xs font-bold transition ${attendanceFilter === f ? "border-amber-400/40 bg-amber-500/10 text-amber-300" : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>
+                {f === "today" ? (language === "ar" ? "اليوم" : "Today") : f === "week" ? (language === "ar" ? "الأسبوع" : "Week") : f === "month" ? (language === "ar" ? "الشهر" : "Month") : (language === "ar" ? "الكل" : "All")}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Search */}
+        {!isGuard && (
+          <TxtInput className="mb-4" placeholder={language === "ar" ? "🔍 بحث بالاسم..." : "🔍 Search by name..."} value={attendanceSearch} onChange={e => setAttendanceSearch(e.target.value)} />
+        )}
+
+        {/* Export + Archive buttons - owner only */}
+        {isOwner && (
+          <div className="mb-4 flex flex-wrap gap-2">
+            <Btn variant="secondary" className="h-9 px-3 text-xs" onClick={() => exportAttendanceExcel(mergedAttendance, approvedUsers, snapshot.buildings)}>
+              📥 {language === "ar" ? "تصدير Excel" : "Export Excel"}
+            </Btn>
+            <Btn variant="danger" className="h-9 px-3 text-xs" onClick={async () => {
+              if (confirm(language === "ar"
+                ? "سيتم تصدير السجلات الأقدم من 90 يوم إلى Excel ثم حذفها. متأكد؟"
+                : "Records older than 90 days will be exported to Excel then deleted. Confirm?"))
+                await archiveAndDeleteOldAttendance();
+            }}>
+              🗃 {language === "ar" ? "أرشفة وحذف +90 يوم" : "Archive & Delete 90d+"}
+            </Btn>
+            <span className="text-xs text-slate-500 self-center">
+              {mergedAttendance.length} {language === "ar" ? "سجل إجمالي" : "total records"}
+            </span>
+          </div>
+        )}
+
+        {/* GRID VIEW */}
+        {attendanceView === "grid" && !isGuard && (() => {
+          // Get last 14 days
+          const days: string[] = [];
+          for (let i = 0; i < 14; i++) {
+            const d = new Date(); d.setDate(d.getDate() - i);
+            days.push(d.toISOString().slice(0, 10));
+          }
+          const displayGuards = guardUsers.filter(g =>
+            !attendanceSearch || g.name.toLowerCase().includes(attendanceSearch.toLowerCase())
+          );
+          return (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse min-w-[600px]">
+                <thead>
+                  <tr>
+                    <th className="text-start font-bold text-slate-400 py-2 pe-3 min-w-[120px]">{language === "ar" ? "الحارس" : "Guard"}</th>
+                    {days.map(d => (
+                      <th key={d} className="text-center font-bold text-slate-500 px-1 min-w-[60px]">
+                        <div className={d === today() ? "text-amber-400 font-black" : ""}>{d.slice(8)}/{d.slice(5, 7)}</div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayGuards.map(g => (
+                    <tr key={g.id} className="border-t border-white/5">
+                      <td className="py-2 pe-3 font-bold text-white truncate max-w-[120px]">{g.name}</td>
+                      {days.map(d => {
+                        const recs = mergedAttendance.filter(a => a.userId === g.id && a.time.startsWith(d));
+                        const last = recs[0];
+                        const hasIn = !!last;
+                        const hasOut = !!last?.checkOut;
+                        return (
+                          <td key={d} className="text-center px-1 py-2">
+                            {hasOut ? <span title={`${last.time.split(" ")[1]} → ${last.checkOut!.split(" ")[1]}`} className="text-emerald-400 cursor-help">✅</span>
+                              : hasIn ? <span title={last.time.split(" ")[1]} className="text-amber-400 animate-pulse cursor-help">🟡</span>
+                              : <span className="text-slate-700">—</span>}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="mt-3 flex gap-4 text-xs text-slate-500">
+                <span>✅ {language === "ar" ? "دخول + خروج" : "In + Out"}</span>
+                <span>🟡 {language === "ar" ? "دخول فقط (لا يزال داخلاً)" : "In only (still inside)"}</span>
+                <span>— {language === "ar" ? "غائب" : "Absent"}</span>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* LIST VIEW */}
+        {(attendanceView === "list" || isGuard) && (
         <div className="space-y-2">
           {(isGuard && currentUser
             ? mergedAttendance.filter(a => a.userId === currentUser.id)
-            : mergedAttendance
-          ).slice(0, 30).map(a => {
+            : (() => {
+                const now = new Date();
+                return mergedAttendance.filter(a => {
+                  const d = new Date(a.time.slice(0, 10));
+                  if (attendanceFilter === "today") return a.time.startsWith(today());
+                  if (attendanceFilter === "week") { const w = new Date(now); w.setDate(w.getDate() - 7); return d >= w; }
+                  if (attendanceFilter === "month") { const m = new Date(now); m.setDate(m.getDate() - 30); return d >= m; }
+                  return true;
+                }).filter(a => !attendanceSearch || a.userName.toLowerCase().includes(attendanceSearch.toLowerCase()));
+              })()
+          ).slice(0, 50).map(a => {
             const isCheckedOut = !!a.checkOut;
             let dur = "";
             if (a.checkOut) {
@@ -3139,6 +3293,7 @@ export default function App() {
             );
           })}
         </div>
+        )}
       </Panel>
     </div>
   );
