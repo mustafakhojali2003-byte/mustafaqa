@@ -454,6 +454,99 @@ export default function App() {
     return () => setActiveUserIds(prev => prev.filter(id => id !== currentUserId));
   }, [currentUserId]);
 
+  // ─── Sync Firebase → snapshot (so all devices see same data) ──────────────
+  useEffect(() => {
+    if (remoteReports.length > 0)
+      setSnapshot(prev => {
+        const map = new Map(prev.reports.map(r => [r.id, r]));
+        remoteReports.forEach(r => map.set(r.id, r));
+        return { ...prev, reports: Array.from(map.values()).sort((a, b) => b.time.localeCompare(a.time)) };
+      });
+  }, [remoteReports]);
+
+  useEffect(() => {
+    if (remoteAlerts.length > 0)
+      setSnapshot(prev => {
+        const map = new Map(prev.alerts.map(a => [a.id, a]));
+        remoteAlerts.forEach(a => map.set(a.id, a));
+        return { ...prev, alerts: Array.from(map.values()).sort((a, b) => b.time.localeCompare(a.time)) };
+      });
+  }, [remoteAlerts]);
+
+  useEffect(() => {
+    if (remoteVisitors.length > 0)
+      setSnapshot(prev => {
+        const map = new Map(prev.visitors.map(v => [v.id, v]));
+        remoteVisitors.forEach(v => map.set(v.id, v));
+        return { ...prev, visitors: Array.from(map.values()) };
+      });
+  }, [remoteVisitors]);
+
+  useEffect(() => {
+    if (remoteAttendance.length > 0)
+      setSnapshot(prev => {
+        const map = new Map(prev.attendance.map(a => [a.id, a]));
+        remoteAttendance.forEach(a => map.set(a.id, a));
+        return { ...prev, attendance: Array.from(map.values()) };
+      });
+  }, [remoteAttendance]);
+
+  useEffect(() => {
+    if (remoteTasks.length > 0)
+      setSnapshot(prev => {
+        const map = new Map(prev.tasks.map(t => [t.id, t]));
+        remoteTasks.forEach(t => map.set(t.id, t));
+        return { ...prev, tasks: Array.from(map.values()) };
+      });
+  }, [remoteTasks]);
+
+  useEffect(() => {
+    if (remoteShifts.length > 0)
+      setSnapshot(prev => {
+        const map = new Map(prev.shifts.map(s => [s.id, s]));
+        remoteShifts.forEach(s => map.set(s.id, s));
+        return { ...prev, shifts: Array.from(map.values()) };
+      });
+  }, [remoteShifts]);
+
+  useEffect(() => {
+    if (remoteViolations.length > 0)
+      setSnapshot(prev => {
+        const map = new Map(prev.violations.map(v => [v.id, v]));
+        remoteViolations.forEach(v => map.set(v.id, v));
+        return { ...prev, violations: Array.from(map.values()) };
+      });
+  }, [remoteViolations]);
+
+  useEffect(() => {
+    if (remoteSOSEvents.length > 0)
+      setSnapshot(prev => {
+        const map = new Map(prev.sosEvents.map(s => [s.id, s]));
+        remoteSOSEvents.forEach(s => map.set(s.id, s));
+        return { ...prev, sosEvents: Array.from(map.values()) };
+      });
+  }, [remoteSOSEvents]);
+
+  useEffect(() => {
+    if (remoteApprovedUsers.length > 0)
+      setSnapshot(prev => {
+        const map = new Map(prev.users.map(u => [u.id, u]));
+        remoteApprovedUsers.forEach(u => map.set(u.id, u));
+        return { ...prev, users: Array.from(map.values()) };
+      });
+  }, [remoteApprovedUsers]);
+
+  useEffect(() => {
+    if (remotePendingUsers.length > 0)
+      setSnapshot(prev => {
+        const localPending = prev.users.filter(u => u.status === "pending");
+        const map = new Map(localPending.map(u => [u.id, u]));
+        remotePendingUsers.forEach(u => map.set(u.id, u));
+        const nonPending = prev.users.filter(u => u.status !== "pending");
+        return { ...prev, users: [...nonPending, ...Array.from(map.values())] };
+      });
+  }, [remotePendingUsers]);
+
   useEffect(() => {
     if (!currentUser) return;
     if (initialAlerts.current) { initialAlerts.current = false; prevAlertCount.current = mergedAlerts.length; return; }
@@ -506,8 +599,15 @@ export default function App() {
       permissions: payload.role === "admin" ? ["reports", "attendance", "buildings", "viewReports", "chat", "visitors", "shifts"] : ["reports", "attendance", "chat", "buildings", "visitors", "sos"],
       rating: 4, passwordHash: hashPassword(payload.password), soundEnabled: true, desktopNotificationsEnabled: false, showFullToAdmin: false, createdAt: nowStamp(), violations: 0,
     };
-    mutate(prev => ({ ...prev, users: [newUser, ...prev.users], auditLog: [createAuditEntry(null, "account_request", newUser.email, "طلب حساب جديد", "warning"), ...prev.auditLog] }));
-    setAuthInfo(language === "ar" ? "تم إرسال الطلب وهو بانتظار موافقة المالك" : "Request submitted — pending owner approval");
+    // Save to Firebase so owner sees it on ANY device
+    try {
+      await savePendingUser(newUser);
+      mutate(prev => ({ ...prev, users: [newUser, ...prev.users], auditLog: [createAuditEntry(null, "account_request", newUser.email, "طلب حساب جديد", "warning"), ...prev.auditLog] }));
+      setAuthInfo(language === "ar" ? "تم إرسال الطلب وهو بانتظار موافقة المالك" : "Request submitted — pending owner approval");
+    } catch {
+      mutate(prev => ({ ...prev, users: [newUser, ...prev.users] }));
+      setAuthInfo(language === "ar" ? "تم الإرسال (وضع أوفلاين)" : "Submitted (offline mode)");
+    }
   };
 
   // SOS
@@ -544,8 +644,8 @@ export default function App() {
     e.preventDefault();
     if (!currentUser || !reportForm.text.trim()) return;
     const report: Report = { id: `r-${Date.now()}`, buildingId: reportForm.buildingId, text: reportForm.text.trim(), senderId: currentUser.id, senderName: currentUser.name, senderEmail: currentUser.email, senderPhone: currentUser.phone, time: nowStamp(), status: reportForm.status, mediaUrl: reportForm.mediaUrl || undefined, mediaKind: reportForm.mediaKind || undefined, fileName: reportForm.fileName || undefined };
-    mutate(prev => ({ ...prev, reports: [report, ...prev.reports] }), language === "ar" ? "تم حفظ التقرير" : "Report saved");
     void saveReport(report);
+    mutate(prev => ({ ...prev, reports: [report, ...prev.reports] }), language === "ar" ? "تم حفظ التقرير" : "Report saved");
     pushSync("report");
     setReportForm(prev => ({ ...prev, text: "", status: "normal", mediaUrl: "", mediaKind: "", fileName: "" }));
   };
@@ -557,8 +657,8 @@ export default function App() {
     const guard = approvedUsers.find(u => u.id === shiftForm.guardId);
     if (!guard) return;
     const shift: Shift = { id: `s-${Date.now()}`, guardId: shiftForm.guardId, guardName: guard.name, buildingId: shiftForm.buildingId, date: shiftForm.date, startTime: shiftForm.startTime, endTime: shiftForm.endTime, status: "scheduled", createdAt: nowStamp() };
-    mutate(prev => ({ ...prev, shifts: [shift, ...prev.shifts] }), language === "ar" ? "تمت إضافة النوبة" : "Shift added");
     void saveShift(shift);
+    mutate(prev => ({ ...prev, shifts: [shift, ...prev.shifts] }), language === "ar" ? "تمت إضافة النوبة" : "Shift added");
     setShiftForm({ guardId: "", buildingId: "", date: today(), startTime: "07:00", endTime: "19:00" });
   };
 
@@ -604,8 +704,8 @@ export default function App() {
   const clockIn = () => {
     if (!currentUser) return;
     const record: AttendanceRecord = { id: `at-${Date.now()}`, userId: currentUser.id, userName: currentUser.name, buildingId: currentUser.assignedBuildingId ?? snapshot.buildings[0]?.id ?? "", method: "manual", time: nowStamp() };
-    mutate(prev => ({ ...prev, attendance: [record, ...prev.attendance] }), language === "ar" ? "تم تسجيل الحضور" : "Checked in");
     void saveAttendance(record);
+    mutate(prev => ({ ...prev, attendance: [record, ...prev.attendance] }), language === "ar" ? "تم تسجيل الحضور" : "Checked in");
     pushSync("attendance");
   };
 
@@ -624,7 +724,7 @@ export default function App() {
   const approveUser = (userId: string) => {
     if (!currentUser) return;
     mutate(prev => ({ ...prev, users: prev.users.map(u => u.id === userId ? { ...u, status: "approved" } : u), auditLog: [createAuditEntry(currentUser, "approve_user", userId, "تمت الموافقة على المستخدم", "info"), ...prev.auditLog] }), language === "ar" ? "تمت الموافقة" : "Approved");
-    const approvedUser = snapshot.users.find(u => u.id === userId);
+    const approvedUser = [...snapshot.users, ...remotePendingUsers].find(u => u.id === userId);
     if (approvedUser) void saveApprovedUser({ ...approvedUser, status: "approved" });
     void deletePendingUserRemote(userId);
   };
@@ -1259,6 +1359,7 @@ export default function App() {
             e.preventDefault();
             if (!currentUser || !alertForm.text.trim()) return;
             const alert: AlertLog = { id: `a-${Date.now()}`, status: alertForm.customStatus || alertForm.status, target: alertForm.target, text: alertForm.text.trim(), sender: currentUser.name, time: nowStamp(), severity: alertForm.status.toLowerCase().includes("fire") || alertForm.status.toLowerCase().includes("حريق") ? "critical" : "info" };
+            void saveAlert(alert);
             mutate(prev => ({ ...prev, alerts: [alert, ...prev.alerts] }), language === "ar" ? "تم إرسال التنبيه" : "Alert sent");
             setAlertForm(p => ({ ...p, text: "", customStatus: "" }));
           }} className="space-y-4">
@@ -1413,6 +1514,7 @@ export default function App() {
             const guards = isAll ? guardUsers : [guardUsers.find(u => u.id === taskForm.assignedTo)].filter(Boolean) as User[];
             guards.forEach(g => {
               const task = { id: `t-${Date.now()}-${g.id}`, title: taskForm.title.trim(), details: taskForm.details.trim(), assignedTo: g.id, assignedName: g.name, status: "pending" as const, createdAt: nowStamp(), priority: taskForm.priority, dueDate: taskForm.dueDate || undefined };
+              void saveTask(task);
               mutate(prev => ({ ...prev, tasks: [task, ...prev.tasks] }));
             });
             showToast(language === "ar" ? "تمت إضافة المهمة" : "Task added");
