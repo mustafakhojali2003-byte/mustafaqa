@@ -510,12 +510,17 @@ export default function App() {
     return shiftFilter === "today" ? base.filter(s => s.date === today()) : base;
   }, [mergedShifts, shiftFilter, isGuard, currentUser]);
   const myShift = useMemo(() => isGuard && currentUser ? mergedShifts.find(s => s.guardId === currentUser.id && s.date === today()) : null, [currentUser, isGuard, mergedShifts]);
-  const hasActiveEmergency = useMemo(() =>
-    mergedAlerts.some(a => a.severity === "critical" && !stoppedAlertIds.has(a.id)) ||
-    mergedSOSEvents.some(s => !s.resolved) ||
-    emergencyActive,
-    [mergedAlerts, mergedSOSEvents, emergencyActive, stoppedAlertIds]
-  );
+  const hasActiveEmergency = useMemo(() => {
+    // Use 'stopped' field from Firebase (persists across sessions)
+    // Fall back to local stoppedAlertIds for immediate UI response
+    const hasActiveCritical = mergedAlerts.some(a =>
+      a.severity === "critical" &&
+      !(a as AlertLog & { stopped?: boolean }).stopped &&
+      !stoppedAlertIds.has(a.id)
+    );
+    const hasActiveSOS = mergedSOSEvents.some(s => !s.resolved);
+    return hasActiveCritical || hasActiveSOS;
+  }, [mergedAlerts, mergedSOSEvents, stoppedAlertIds]);
 
   const insights = useMemo(() => analyzeData(mergedReports, mergedShifts, mergedViolations, mergedSOSEvents, mergedAttendance, snapshot.buildings), [mergedReports, mergedShifts, mergedViolations, mergedSOSEvents, mergedAttendance, snapshot.buildings]);
 
@@ -646,13 +651,16 @@ export default function App() {
 
   useEffect(() => {
     if (remoteAlerts.length > 0) {
-      // Auto-stop alerts that were stopped on another device
+      // Sync stopped state from Firebase on every update
       const remoteStoppedIds = remoteAlerts
         .filter(a => (a as AlertLog & { stopped?: boolean }).stopped === true)
         .map(a => a.id);
       if (remoteStoppedIds.length > 0) {
-        setStoppedAlertIds(prev => new Set([...prev, ...remoteStoppedIds]));
-        // If emergency was active and all critical alerts are now stopped, stop siren
+        setStoppedAlertIds(prev => {
+          const next = new Set([...prev, ...remoteStoppedIds]);
+          return next;
+        });
+        // Stop siren if all critical alerts are stopped in Firebase
         const allCritStopped = remoteAlerts
           .filter(a => a.severity === "critical")
           .every(a => (a as AlertLog & { stopped?: boolean }).stopped === true);
@@ -771,6 +779,14 @@ export default function App() {
     }
     prevAlertCount.current = mergedAlerts.length;
   }, [currentUser, mergedAlerts]);
+
+  // ─── Auto-stop siren if no active critical alerts ────────────────────────────
+  useEffect(() => {
+    if (emergencyActive && !hasActiveEmergency) {
+      stopEmergencySound();
+      setEmergencyActive(false);
+    }
+  }, [hasActiveEmergency, emergencyActive]);
 
   // ─── Real-time task notifications ────────────────────────────────────────────
   const prevTaskCount = useRef(0);
@@ -1197,7 +1213,11 @@ export default function App() {
     const todayReports = mergedReports.filter(r => r.time.startsWith(todayStr));
     const next24hVisitors = mergedVisitors.filter(v => v.arrivalDate === todayStr && v.status === "scheduled");
     const onlineGuards = guardUsers.filter(u => activeUserIds.includes(u.id));
-    const hasEmergency = mergedAlerts.some(a => a.severity === "critical" && !stoppedAlertIds.has(a.id)) || mergedSOSEvents.some(s => !s.resolved) || emergencyActive;
+    const hasEmergency = mergedAlerts.some(a =>
+      a.severity === "critical" &&
+      !(a as AlertLog & { stopped?: boolean }).stopped &&
+      !stoppedAlertIds.has(a.id)
+    ) || mergedSOSEvents.some(s => !s.resolved);
 
     // Guard-specific simplified dashboard
     if (isGuard && currentUser) {
@@ -2874,7 +2894,7 @@ export default function App() {
       </Panel>
 
       {/* Active critical banner + master stop */}
-      {(emergencyActive || mergedAlerts.some(a => a.severity === "critical" && !stoppedAlertIds.has(a.id))) && (
+      {(emergencyActive || mergedAlerts.some(a => a.severity === "critical" && !(a as AlertLog & { stopped?: boolean }).stopped && !stoppedAlertIds.has(a.id))) && (
         <div className="rounded-2xl border border-red-500/50 bg-red-600/20 p-4 flex flex-wrap items-center gap-3">
           <span className="text-3xl animate-pulse">🚨</span>
           <div className="flex-1">
