@@ -265,7 +265,13 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [snapshot, setSnapshot] = useState<AppSnapshot>(() => loadSnapshot());
-  const [language, setLanguage] = useState<Language>(() => loadJson<Language>(LANGUAGE_KEY, "ar"));
+  const [language, setLanguage] = useState<Language>(() => {
+    const saved = loadJson<Language>(LANGUAGE_KEY, "ar");
+    // Apply dir immediately on load
+    document.documentElement.dir = saved === "ar" ? "rtl" : "ltr";
+    document.documentElement.lang = saved;
+    return saved;
+  });
   const [currentUserId, setCurrentUserId] = useState<string | null>(() => window.localStorage.getItem(SESSION_KEY) || null);
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [toast, setToast] = useState<Toast | null>(null);
@@ -3198,8 +3204,8 @@ export default function App() {
             <div>
               <Lbl>{language === "ar" ? "اللغة" : "Language"}</Lbl>
               <div className="flex gap-2">
-                <Btn variant={language === "ar" ? "primary" : "secondary"} onClick={() => { setLanguage("ar"); document.documentElement.dir = "rtl"; }}>🇸🇦 العربية</Btn>
-                <Btn variant={language === "en" ? "primary" : "secondary"} onClick={() => { setLanguage("en"); document.documentElement.dir = "ltr"; }}>🇬🇧 English</Btn>
+                <Btn variant={language === "ar" ? "primary" : "secondary"} onClick={() => { setLanguage("ar"); document.documentElement.dir = "rtl"; document.documentElement.lang = "ar"; window.localStorage.setItem(LANGUAGE_KEY, "ar"); }}>🇸🇦 العربية</Btn>
+                <Btn variant={language === "en" ? "primary" : "secondary"} onClick={() => { setLanguage("en"); document.documentElement.dir = "ltr"; document.documentElement.lang = "en"; window.localStorage.setItem(LANGUAGE_KEY, "en"); }}>🇬🇧 English</Btn>
               </div>
             </div>
 
@@ -3444,7 +3450,7 @@ export default function App() {
   };
 
   if (!currentUser) {
-    return <AuthScreen language={language} buildings={snapshot.buildings} errorMessage={authError} infoMessage={authInfo} onSignIn={handleSignIn} onCreateAccount={handleCreateAccount} onLanguageChange={setLanguage} />;
+    return <AuthScreen language={language} buildings={snapshot.buildings} errorMessage={authError} infoMessage={authInfo} onSignIn={handleSignIn} onCreateAccount={handleCreateAccount} onLanguageChange={lang => { setLanguage(lang); document.documentElement.dir = lang === "ar" ? "rtl" : "ltr"; window.localStorage.setItem(LANGUAGE_KEY, lang); }} />;
   }
 
   return (
