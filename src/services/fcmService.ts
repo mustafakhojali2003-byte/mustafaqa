@@ -3,6 +3,7 @@ import { doc, setDoc } from "firebase/firestore";
 import { firebaseApp, firestore } from "./firebase";
 
 const VAPID_KEY = "BETZFbkWqKa2-oo8lavqp5r350ebPPtqZlkzt0lki5QDcbcnlPPttBVaTABVRSnMuFn4JwXZQ5qD_lOd96MjwBk";
+export const WORKER_URL = "https://mustafaqa-notify.mustafakhojali884.workers.dev";
 let messaging: Messaging | null = null;
 
 function getMessagingInstance(): Messaging | null {
@@ -59,4 +60,20 @@ export function listenForegroundMessages(
     });
     return unsub;
   } catch { return () => {}; }
+}
+
+/** Send push notification via Cloudflare Worker */
+export async function sendPushViaWorker(
+  title: string,
+  body: string,
+  type: "emergency" | "sos" | "alert" | "task" | "report" | "chat" | "pending_user",
+  userId?: string
+): Promise<void> {
+  try {
+    await fetch(WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, body, type, userId }),
+    });
+  } catch { /* silent fail */ }
 }

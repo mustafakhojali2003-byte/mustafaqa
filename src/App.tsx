@@ -7,7 +7,7 @@ import { deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, sa
 import { exportReportsPDF, exportShiftReportPDF, exportFullDashboardPDF } from "./services/pdfService";
 import { generateVisitorQR, generateBuildingQR } from "./services/qrService";
 import { analyzeData } from "./services/analyticsService";
-import { initFCM, listenForegroundMessages } from "./services/fcmService";
+import { initFCM, listenForegroundMessages, sendPushViaWorker } from "./services/fcmService";
 import { validateEmail } from "./services/emailVerification";
 import type { AlertLog, AppSnapshot, AttendanceRecord, AuditEntry, AuditSeverity, Building, ChatMessage, Conversation, Language, NewAccountPayload, Pair, Report, ReportStatus, Role, Shift, SOSEvent, Tab, Task, Toast, ToastTone, User, Violation, VisitorFormPayload, VisitorRecord } from "./types/security";
 
@@ -716,6 +716,9 @@ export default function App() {
       await savePendingUser(newUser);
       mutate(prev => ({ ...prev, users: [newUser, ...prev.users], auditLog: [createAuditEntry(null, "account_request", newUser.email, "طلب حساب جديد", "warning"), ...prev.auditLog] }));
       setAuthInfo(language === "ar" ? "تم إرسال الطلب وهو بانتظار موافقة المالك" : "Request submitted — pending owner approval");
+      // Notify owner via Worker
+      const owner = approvedUsers.find(u => u.role === "owner");
+      if (owner) void sendPushViaWorker("⏳ طلب حساب جديد", `${newUser.name} — ${newUser.email}`, "pending_user", owner.id);
     } catch {
       mutate(prev => ({ ...prev, users: [newUser, ...prev.users] }));
       setAuthInfo(language === "ar" ? "تم الإرسال (وضع أوفلاين)" : "Submitted (offline mode)");
@@ -741,6 +744,12 @@ export default function App() {
     mutate(prev => ({ ...prev, sosEvents: [sos, ...prev.sosEvents], alerts: [sosAlert, ...prev.alerts], auditLog: [createAuditEntry(currentUser, "sos_trigger", currentUser.name, `SOS activated at ${address}`, "critical"), ...prev.auditLog] }), language === "ar" ? "🚨 تم إرسال نداء الاستغاثة!" : "🚨 SOS Alert Sent!");
     void saveSOSEvent(sos);
     void saveAlert(sosAlert);
+    // Push SOS to ALL devices via Cloudflare Worker
+    void sendPushViaWorker(
+      "🚨 SOS EMERGENCY",
+      `${currentUser.name} — ${address}`,
+      "sos"
+    );
     sendToServiceWorker({ title: `🚨 SOS: ${currentUser.name}`, body: `Emergency at ${address}`, tag: sos.id, requireInteraction: true });
   }, [currentUser, language, mutate]);
 
@@ -774,6 +783,11 @@ export default function App() {
     void saveReport(report);
     mutate(prev => ({ ...prev, reports: [report, ...prev.reports] }), language === "ar" ? "✅ تم إرسال التقرير" : "✅ Report sent");
     pushSync("report");
+    // Push new report to owner & admins
+    const emoji = report.status === "critical" ? "🚨" : report.status === "warning" ? "⚠️" : "📋";
+    approvedUsers.filter(u => u.role === "owner" || u.role === "admin").forEach(u => {
+      void sendPushViaWorker(`${emoji} تقرير جديد`, `${currentUser?.name}: ${report.text.slice(0, 80)}`, "report", u.id);
+    });
     setReportForm(prev => ({ ...prev, text: "", status: "normal", mediaUrl: "", mediaKind: "", fileName: "" }));
     setReportScannedBuilding("");
   };
@@ -847,6 +861,18 @@ export default function App() {
     const updated = { ...baseConv, messages: [...(baseConv.messages ?? []), msg] };
     // Save to Firebase immediately
     void saveConversation(updated);
+    // Push notification to recipient via Worker
+    const recipientId = currentUser.role === "owner" || currentUser.role === "admin"
+      ? activeConversation.participantId
+      : approvedUsers.find(u => u.role === "owner")?.id;
+    if (recipientId) {
+      void sendPushViaWorker(
+        `💬 ${currentUser.name}`,
+        text.trim().slice(0, 100),
+        "chat",
+        recipientId
+      );
+    }
     // Update local state
     mutate(prev => {
       const localExists = prev.conversations.find(c => c.id === activeConversation.id);
@@ -2453,13 +2479,13 @@ export default function App() {
               const task: Task = { id: `t-${Date.now()}-${g.id}`, title: taskForm.title.trim(), details: taskForm.details.trim(), assignedTo: g.id, assignedName: g.name, status: "pending", createdAt: nowStamp(), priority: taskForm.priority, dueDate: taskForm.dueDate || undefined };
               void saveTask(task);
               mutate(prev => ({ ...prev, tasks: [task, ...prev.tasks] }));
-              // Send push notification to the guard
-              sendToServiceWorker({
-                title: `📋 ${language === "ar" ? "مهمة جديدة" : "New Task"}`,
-                body: `${taskForm.title.trim()} — ${language === "ar" ? "أنجزها في أقرب وقت" : "Complete as soon as possible"}`,
-                tag: task.id,
-                requireInteraction: false,
-              });
+              // Push to specific guard via Cloudflare Worker
+              void sendPushViaWorker(
+                `📋 ${language === "ar" ? "مهمة جديدة" : "New Task"}`,
+                `${taskForm.title.trim()} — ${language === "ar" ? "أنجزها في أقرب وقت" : "Complete ASAP"}`,
+                "task",
+                g.id
+              );
             });
             showToast(language === "ar" ? "تمت إضافة المهمة" : "Task added");
             setTaskForm({ title: "", details: "", assignedTo: "all", priority: "medium", dueDate: "" });
