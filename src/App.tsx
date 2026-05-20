@@ -1618,7 +1618,9 @@ export default function App() {
     setShowAddUserForm(false);
   };
 
-  const renderUsers = () => (
+  const renderUsers = () => {
+    if (isGuard) return <EmptyMsg title={language === "ar" ? "غير مصرح" : "Not Authorized"} text={language === "ar" ? "هذه الصفحة للإدارة فقط" : "This page is for administrators only"} />;
+    return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SectionHead title={language === "ar" ? "إدارة المستخدمين" : "User Management"} subtitle={`${approvedUsers.length} ${language === "ar" ? "مستخدم" : "users"}`} />
@@ -1824,6 +1826,7 @@ export default function App() {
       </div>
     </div>
   );
+  };
 
   const sendChatMedia = async (file: File) => {
     if (!currentUser || !activeConversation) return;
@@ -1879,7 +1882,7 @@ export default function App() {
     return (
       <div className="space-y-4">
         <SectionHead title={language === "ar" ? "الدردشة" : "Chat"} />
-        <input ref={chatFileRef} type="file" accept="image/*,video/*" className="hidden" onChange={async e => { if (e.target.files?.[0]) { await sendChatMedia(e.target.files[0]); e.target.value = ""; } }} />
+        <input ref={chatFileRef} type="file" accept="image/*,video/*" capture="environment" className="hidden" onChange={async e => { if (e.target.files?.[0]) { await sendChatMedia(e.target.files[0]); e.target.value = ""; } }} />
         <div className="flex flex-col gap-4 lg:flex-row">
           <Panel className="lg:w-72 lg:flex-shrink-0">
             <div className="mb-3 font-black text-white">{language === "ar" ? "المحادثات" : "Conversations"}</div>
@@ -2127,10 +2130,16 @@ export default function App() {
         </div>
       </Panel>
       <div className="space-y-3">
-        {mergedAttendance.slice(0, 20).map(a => (
+        {(isGuard && currentUser
+          ? mergedAttendance.filter(a => a.userId === currentUser.id)
+          : mergedAttendance
+        ).slice(0, 20).map(a => (
           <Panel key={a.id}>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div><div className="font-black text-white">{a.userName}</div><div className="text-sm text-slate-400">{a.time} · {formatBuilding(snapshot.buildings.find(b => b.id === a.buildingId), language)}</div></div>
+              <div>
+                {!isGuard && <div className="font-black text-white">{a.userName}</div>}
+                <div className="text-sm text-slate-400">{a.time} · {formatBuilding(snapshot.buildings.find(b => b.id === a.buildingId), language)}</div>
+              </div>
               <Badge className={a.method === "qr" ? "border-sky-400/30 bg-sky-500/15 text-sky-300" : "border-slate-400/30 bg-slate-500/15 text-slate-300"}>{a.method === "qr" ? "QR" : language === "ar" ? "يدوي" : "Manual"}</Badge>
             </div>
           </Panel>
