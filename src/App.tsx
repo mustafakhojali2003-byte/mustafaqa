@@ -340,7 +340,15 @@ export default function App() {
   const [visitorQrMap, setVisitorQrMap] = useState<Record<string, string>>({});
   const [shiftFilter, setShiftFilter] = useState<"all" | "today">("today");
   const [violationForm, setViolationForm] = useState({ guardId: "", type: "", description: "", severity: "minor" as Violation["severity"], buildingId: "" });
-  const [shiftForm, setShiftForm] = useState({ guardId: "", buildingId: "", date: today(), startTime: "07:00", endTime: "19:00" });
+  const [shiftForm, setShiftForm] = useState({
+    shiftType: "morning" as "morning" | "evening",
+    guardId: "",
+    buildingId: "",
+    eveningRole: "gate" as "gate" | "patrol",
+    date: today(),
+    notes: "",
+  });
+  const [showShiftScheduler, setShowShiftScheduler] = useState(false);
   const [endShiftNote, setEndShiftNote] = useState("");
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null);
 
@@ -1538,175 +1546,201 @@ export default function App() {
     </div>
   );
 
-  const renderShifts = () => (
-    <div className="space-y-6">
-      <SectionHead title={language === "ar" ? "إدارة النوبات" : "Shift Management"} />
-      {(isOwner || isAdmin) && (
-        <Panel>
-          <div className="mb-4 font-black text-white">{language === "ar" ? "إضافة نوبة جديدة" : "Add New Shift"}</div>
-          <form onSubmit={addShift} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div><Lbl>{language === "ar" ? "الحارس" : "Guard"}</Lbl>
-              <SelInput value={shiftForm.guardId} onChange={e => setShiftForm(p => ({ ...p, guardId: e.target.value }))}>
-                <option value="">{language === "ar" ? "اختر حارساً" : "Select Guard"}</option>
-                {guardUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </SelInput>
-            </div>
-            <div><Lbl>{language === "ar" ? "المبنى" : "Building"}</Lbl>
-              <SelInput value={shiftForm.buildingId} onChange={e => setShiftForm(p => ({ ...p, buildingId: e.target.value }))}>
-                <option value="">{language === "ar" ? "اختر مبنى" : "Select Building"}</option>
-                {snapshot.buildings.map(b => <option key={b.id} value={b.id}>{language === "ar" ? b.nameAr : b.nameEn}</option>)}
-              </SelInput>
-            </div>
-            <div><Lbl>{language === "ar" ? "التاريخ" : "Date"}</Lbl><TxtInput type="date" value={shiftForm.date} onChange={e => setShiftForm(p => ({ ...p, date: e.target.value }))} /></div>
-            <div><Lbl>{language === "ar" ? "وقت البداية" : "Start Time"}</Lbl><TxtInput type="time" value={shiftForm.startTime} onChange={e => setShiftForm(p => ({ ...p, startTime: e.target.value }))} /></div>
-            <div><Lbl>{language === "ar" ? "وقت النهاية" : "End Time"}</Lbl><TxtInput type="time" value={shiftForm.endTime} onChange={e => setShiftForm(p => ({ ...p, endTime: e.target.value }))} /></div>
-            <div className="flex items-end"><Btn type="submit" className="w-full">{language === "ar" ? "إضافة النوبة" : "Add Shift"}</Btn></div>
-          </form>
-        </Panel>
-      )}
-      {isGuard && myShift && (
-        <Panel>
-          <div className="mb-3 font-black text-white">{language === "ar" ? "نوبتك اليوم" : "Your Shift Today"}</div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <InfoRow label={language === "ar" ? "البداية" : "Start"} value={myShift.startTime} />
-            <InfoRow label={language === "ar" ? "النهاية" : "End"} value={myShift.endTime} />
-            <InfoRow label={language === "ar" ? "الحالة" : "Status"} value={myShift.status} />
+  const renderShifts = () => {
+    const todayStr = today();
+    const todayMorning = mergedShifts.filter(s => s.date === todayStr && s.startTime === "04:00" && s.endTime === "16:00");
+    const todayEvening = mergedShifts.filter(s => s.date === todayStr && s.startTime === "16:00");
+    const myShifts = isGuard && currentUser ? mergedShifts.filter(s => s.guardId === currentUser.id) : mergedShifts;
+
+    return (
+      <div className="space-y-6">
+        <SectionHead title={language === "ar" ? "إدارة النوبات" : "Shift Management"} />
+
+        {/* Today overview - owner/admin */}
+        {!isGuard && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* Morning shift */}
+            <Panel>
+              <div className="mb-3 flex items-center gap-2">
+                <span className="text-2xl">☀️</span>
+                <div>
+                  <div className="font-black text-amber-300">{language === "ar" ? "الشفت الصباحي" : "Morning Shift"}</div>
+                  <div className="text-xs text-slate-400">4:00 AM → 4:00 PM</div>
+                </div>
+              </div>
+              {todayMorning.length === 0
+                ? <div className="text-sm text-slate-500">{language === "ar" ? "لا نوبات صباحية اليوم" : "No morning shifts today"}</div>
+                : todayMorning.map(s => {
+                  const attToday = mergedAttendance.find(a => a.userId === s.guardId && a.time.startsWith(todayStr));
+                  const b = snapshot.buildings.find(x => x.id === s.buildingId);
+                  return (
+                    <div key={s.id} className="mb-2 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+                      <span className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${attToday ? "bg-emerald-400 animate-pulse" : "bg-slate-600"}`} />
+                      <div className="flex-1">
+                        <div className="font-bold text-white text-sm">{s.guardName}</div>
+                        <div className="text-xs text-slate-400">{b ? (language === "ar" ? b.nameAr : b.nameEn) : "—"}</div>
+                      </div>
+                      <Badge className={attToday ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : "border-slate-400/30 bg-slate-500/15 text-slate-400"}>
+                        {attToday ? (language === "ar" ? "🟢 حاضر" : "🟢 Present") : (language === "ar" ? "⭕ غائب" : "⭕ Absent")}
+                      </Badge>
+                    </div>
+                  );
+                })
+              }
+            </Panel>
+
+            {/* Evening shift */}
+            <Panel>
+              <div className="mb-3 flex items-center gap-2">
+                <span className="text-2xl">🌙</span>
+                <div>
+                  <div className="font-black text-sky-300">{language === "ar" ? "الشفت المسائي" : "Evening Shift"}</div>
+                  <div className="text-xs text-slate-400">4:00 PM → 4:00 AM <span className="text-amber-400">(±1h)</span></div>
+                </div>
+              </div>
+              {/* Roles breakdown */}
+              <div className="mb-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-slate-400 space-y-1">
+                <div>👥 2 {language === "ar" ? "حراس على البوابة" : "guards at gate"}</div>
+                <div>🚶 1 {language === "ar" ? "حارس دورية" : "guard on patrol"}</div>
+                <div className="text-amber-400">⚠️ {language === "ar" ? "التوقيت مرن ±1 ساعة بسبب الباصات" : "Flexible timing ±1h (bus schedule)"}</div>
+              </div>
+              {todayEvening.length === 0
+                ? <div className="text-sm text-slate-500">{language === "ar" ? "لا نوبات مسائية اليوم" : "No evening shifts today"}</div>
+                : todayEvening.map(s => {
+                  const isGate = s.buildingId === "gate-1" || s.buildingId === "gate-2";
+                  return (
+                    <div key={s.id} className="mb-2 flex items-center gap-3 rounded-2xl border border-sky-500/10 bg-sky-500/5 p-3">
+                      <span className="text-lg">{isGate ? "🚪" : "🚶"}</span>
+                      <div className="flex-1">
+                        <div className="font-bold text-white text-sm">{s.guardName}</div>
+                        <div className="text-xs text-slate-400">{isGate ? (language === "ar" ? "بوابة" : "Gate") : (language === "ar" ? "دورية" : "Patrol")}</div>
+                      </div>
+                      <Badge className="border-sky-400/30 bg-sky-500/15 text-sky-300">{s.startTime}</Badge>
+                    </div>
+                  );
+                })
+              }
+            </Panel>
           </div>
-          {myShift.status === "active" && (
-            <div className="mt-4 space-y-3">
-              <TxtArea rows={3} value={endShiftNote} onChange={e => setEndShiftNote(e.target.value)} placeholder={language === "ar" ? "ملاحظات نهاية النوبة..." : "End of shift notes..."} />
-              <Btn onClick={() => endShift(myShift.id)}>{language === "ar" ? "إنهاء النوبة وتصدير PDF" : "End Shift & Export PDF"}</Btn>
-            </div>
-          )}
-        </Panel>
-      )}
-      <Panel>
-        <div className="mb-4 flex items-center gap-3">
-          <div className="font-black text-white">{language === "ar" ? "النوبات" : "Shifts"}</div>
-          <SelInput className="w-40" value={shiftFilter} onChange={e => setShiftFilter(e.target.value as "all" | "today")}>
-            <option value="today">{language === "ar" ? "اليوم" : "Today"}</option>
-            <option value="all">{language === "ar" ? "الكل" : "All"}</option>
-          </SelInput>
-        </div>
-        {todayShifts.length === 0 ? <EmptyMsg title={language === "ar" ? "لا نوبات" : "No Shifts"} text={language === "ar" ? "لا توجد نوبات مجدولة" : "No scheduled shifts"} /> : (
-          <div className="space-y-3">
-            {todayShifts.map(s => (
-              <div key={s.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
+        )}
+
+        {/* Add shift form - owner/admin */}
+        {(isOwner || isAdmin) && (
+          <Panel>
+            <div className="mb-4 font-black text-white">+ {language === "ar" ? "إضافة نوبة" : "Add Shift"}</div>
+            <form onSubmit={addShift} className="space-y-4">
+              {/* Shift type */}
+              <div>
+                <Lbl>{language === "ar" ? "نوع الشفت" : "Shift Type"}</Lbl>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { key: "morning", label: language === "ar" ? "☀️ صباحي (4ص-4م)" : "☀️ Morning (4AM-4PM)" },
+                    { key: "evening", label: language === "ar" ? "🌙 مسائي (4م-4ص)" : "🌙 Evening (4PM-4AM)" },
+                  ] as const).map(({ key, label }) => (
+                    <button key={key} type="button" onClick={() => setShiftForm(p => ({ ...p, shiftType: key }))}
+                      className={`rounded-2xl border p-3 text-sm font-bold transition ${shiftForm.shiftType === key ? (key === "morning" ? "border-amber-400/40 bg-amber-500/10 text-amber-200 scale-105" : "border-sky-400/40 bg-sky-500/10 text-sky-200 scale-105") : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Evening role */}
+              {shiftForm.shiftType === "evening" && (
+                <div>
+                  <Lbl>{language === "ar" ? "الدور في الشفت المسائي" : "Evening Role"}</Lbl>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => setShiftForm(p => ({ ...p, eveningRole: "gate" }))}
+                      className={`rounded-2xl border p-3 text-sm font-bold transition ${shiftForm.eveningRole === "gate" ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200 scale-105" : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>
+                      🚪 {language === "ar" ? "بوابة" : "Gate"}
+                    </button>
+                    <button type="button" onClick={() => setShiftForm(p => ({ ...p, eveningRole: "patrol" }))}
+                      className={`rounded-2xl border p-3 text-sm font-bold transition ${shiftForm.eveningRole === "patrol" ? "border-purple-400/40 bg-purple-500/10 text-purple-200 scale-105" : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>
+                      🚶 {language === "ar" ? "دورية" : "Patrol"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <Lbl>{language === "ar" ? "الحارس" : "Guard"}</Lbl>
+                  <SelInput required value={shiftForm.guardId} onChange={e => setShiftForm(p => ({ ...p, guardId: e.target.value }))}>
+                    <option value="">{language === "ar" ? "— اختر الحارس —" : "— Select guard —"}</option>
+                    {guardUsers.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  </SelInput>
+                </div>
+
+                {/* Morning: show assigned building or override */}
+                {shiftForm.shiftType === "morning" && shiftForm.guardId && (
                   <div>
-                    <div className="font-black text-white">{s.guardName}</div>
-                    <div className="text-sm text-slate-400">{s.date} · {s.startTime}–{s.endTime} · {formatBuilding(snapshot.buildings.find(b => b.id === s.buildingId), language)}</div>
+                    <Lbl>{language === "ar" ? "المبنى المخصص" : "Assigned Building"}</Lbl>
+                    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-300">
+                      {formatBuilding(snapshot.buildings.find(b => b.id === approvedUsers.find(u => u.id === shiftForm.guardId)?.assignedBuildingId), language) || (language === "ar" ? "— لا يوجد مبنى مخصص —" : "— No building assigned —")}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <Lbl>{language === "ar" ? "التاريخ" : "Date"}</Lbl>
+                  <TxtInput type="date" required value={shiftForm.date} onChange={e => setShiftForm(p => ({ ...p, date: e.target.value }))} />
+                </div>
+              </div>
+
+              <div>
+                <Lbl>{language === "ar" ? "ملاحظات (اختياري)" : "Notes (optional)"}</Lbl>
+                <TxtInput value={shiftForm.notes} onChange={e => setShiftForm(p => ({ ...p, notes: e.target.value }))} placeholder={language === "ar" ? "مثال: تأخر متوقع بسبب الباص..." : "e.g. Expected delay due to bus..."} />
+              </div>
+
+              <Btn type="submit" className="w-full h-12">{language === "ar" ? "✅ إضافة النوبة" : "✅ Add Shift"}</Btn>
+            </form>
+          </Panel>
+        )}
+
+        {/* Shift list */}
+        <Panel>
+          <div className="mb-3 font-black text-white">{language === "ar" ? "جدول النوبات" : "Shift Schedule"}</div>
+          {(isGuard ? myShifts : mergedShifts).length === 0
+            ? <EmptyMsg title={language === "ar" ? "لا نوبات" : "No Shifts"} text="" />
+            : (isGuard ? myShifts : mergedShifts).slice().sort((a,b) => b.date.localeCompare(a.date)).slice(0, 30).map(s => {
+              const isMorn = s.startTime === "04:00" && s.endTime === "16:00";
+              const isEve = s.startTime === "16:00";
+              const isGate = s.buildingId === "gate-1" || s.buildingId === "gate-2";
+              const b = snapshot.buildings.find(x => x.id === s.buildingId);
+              return (
+                <div key={s.id} className={`mb-2 flex flex-wrap items-start justify-between gap-3 rounded-2xl border p-4 ${isMorn ? "border-amber-500/20 bg-amber-500/5" : "border-sky-500/20 bg-sky-500/5"}`}>
+                  <div className="flex items-start gap-3">
+                    <span className="text-xl mt-0.5">{isMorn ? "☀️" : isGate ? "🌙🚪" : "🌙🚶"}</span>
+                    <div>
+                      <div className="font-black text-white">{s.guardName}</div>
+                      <div className="text-xs text-slate-400 mt-0.5">
+                        📅 {s.date} · {s.startTime} → {s.endTime}
+                        {isEve && <span className="text-amber-400 ms-1">±1h</span>}
+                      </div>
+                      {s.notes && <div className="text-xs text-slate-500 mt-1 italic">{s.notes}</div>}
+                      {b && <div className="text-xs text-slate-400 mt-0.5">📍 {language === "ar" ? b.nameAr : b.nameEn}</div>}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge className={s.status === "completed" ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : s.status === "active" ? "border-amber-400/30 bg-amber-500/15 text-amber-300" : s.status === "missed" ? "border-red-400/30 bg-red-500/15 text-red-300" : "border-slate-400/30 bg-slate-500/15 text-slate-300"}>{s.status}</Badge>
-                    {s.status === "completed" && <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => { try { exportShiftReportPDF(s, s.guardName, APP_NAME); } catch { showToast("PDF failed", "danger"); } }}>PDF</Btn>}
+                    <Badge className={isMorn ? "border-amber-400/30 bg-amber-500/15 text-amber-300" : "border-sky-400/30 bg-sky-500/15 text-sky-300"}>
+                      {isMorn ? (language === "ar" ? "صباحي" : "Morning") : isGate ? (language === "ar" ? "مسائي · بوابة" : "Evening · Gate") : (language === "ar" ? "مسائي · دورية" : "Evening · Patrol")}
+                    </Badge>
+                    {(isOwner || isAdmin) && (
+                      <Btn variant="danger" className="h-7 px-2 text-xs" onClick={() => {
+                        mutate(prev => ({ ...prev, shifts: prev.shifts.filter(x => x.id !== s.id) }));
+                      }}>✕</Btn>
+                    )}
                   </div>
                 </div>
-                {s.endOfShiftReport && <div className="mt-2 text-xs text-slate-400 italic">"{s.endOfShiftReport}"</div>}
-              </div>
-            ))}
-          </div>
-        )}
-      </Panel>
-    </div>
-  );
-
-  const renderViolations = () => (
-    <div className="space-y-6">
-      <SectionHead title={language === "ar" ? "إدارة المخالفات" : "Violations Management"} />
-      {(isOwner || isAdmin) && (
-        <Panel>
-          <div className="mb-4 font-black text-white">{language === "ar" ? "تسجيل مخالفة" : "Record Violation"}</div>
-          <form onSubmit={addViolation} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div><Lbl>{language === "ar" ? "الحارس" : "Guard"}</Lbl>
-                <SelInput value={violationForm.guardId} onChange={e => setViolationForm(p => ({ ...p, guardId: e.target.value }))}>
-                  <option value="">{language === "ar" ? "اختر حارساً" : "Select Guard"}</option>
-                  {guardUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </SelInput>
-              </div>
-              <div><Lbl>{language === "ar" ? "نوع المخالفة" : "Violation Type"}</Lbl>
-                <SelInput value={violationForm.type} onChange={e => setViolationForm(p => ({ ...p, type: e.target.value }))}>
-                  <option value="">{language === "ar" ? "اختر النوع" : "Select Type"}</option>
-                  {["Late Arrival", "Absence", "Uniform Violation", "Phone Usage", "Security Breach", "Insubordination", "Other"].map(t => <option key={t} value={t}>{t}</option>)}
-                </SelInput>
-              </div>
-              <div><Lbl>{language === "ar" ? "الخطورة" : "Severity"}</Lbl>
-                <SelInput value={violationForm.severity} onChange={e => setViolationForm(p => ({ ...p, severity: e.target.value as Violation["severity"] }))}>
-                  <option value="minor">Minor</option>
-                  <option value="major">Major</option>
-                  <option value="critical">Critical</option>
-                </SelInput>
-              </div>
-              <div><Lbl>{language === "ar" ? "المبنى" : "Building"}</Lbl>
-                <SelInput value={violationForm.buildingId} onChange={e => setViolationForm(p => ({ ...p, buildingId: e.target.value }))}>
-                  <option value="">{language === "ar" ? "اختياري" : "Optional"}</option>
-                  {snapshot.buildings.map(b => <option key={b.id} value={b.id}>{language === "ar" ? b.nameAr : b.nameEn}</option>)}
-                </SelInput>
-              </div>
-            </div>
-            <div><Lbl>{language === "ar" ? "الوصف" : "Description"}</Lbl><TxtArea rows={3} value={violationForm.description} onChange={e => setViolationForm(p => ({ ...p, description: e.target.value }))} placeholder={language === "ar" ? "وصف المخالفة..." : "Describe the violation..."} /></div>
-            <Btn type="submit">{language === "ar" ? "تسجيل المخالفة" : "Record Violation"}</Btn>
-          </form>
+              );
+            })
+          }
         </Panel>
-      )}
-      <Panel>
-        <div className="mb-4 font-black text-white">{language === "ar" ? "سجل المخالفات" : "Violations Log"}</div>
-        {mergedViolations.length === 0 ? <EmptyMsg title={language === "ar" ? "لا مخالفات" : "No Violations"} text={language === "ar" ? "لم تُسجَّل أي مخالفات" : "No violations recorded"} /> : (
-          <div className="space-y-3">
-            {mergedViolations.map(v => (
-              <div key={v.id} className={`rounded-2xl border p-4 ${v.severity === "critical" ? "border-red-500/30 bg-red-500/5" : v.severity === "major" ? "border-amber-500/30 bg-amber-500/5" : "border-slate-500/20 bg-white/5"}`}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="font-black text-white">{v.guardName}</div>
-                    <div className="text-sm font-semibold text-slate-300">{v.type}</div>
-                    <div className="text-xs text-slate-400">{v.issuedAt} · {language === "ar" ? "بواسطة" : "by"}: {v.issuedBy}</div>
-                    {v.description && <div className="mt-1 text-sm text-slate-400">{v.description}</div>}
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <Badge className={v.severity === "critical" ? "border-red-400/30 bg-red-500/15 text-red-300" : v.severity === "major" ? "border-amber-400/30 bg-amber-500/15 text-amber-300" : "border-slate-400/30 bg-slate-500/15 text-slate-300"}>{v.severity}</Badge>
-                    {!v.acknowledged && <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => { mutate(prev => ({ ...prev, violations: prev.violations.map(x => x.id === v.id ? { ...x, acknowledged: true, acknowledgedAt: nowStamp() } : x) }), language === "ar" ? "تم الإقرار" : "Acknowledged"); void updateViolationRemote(v.id, { acknowledged: true, acknowledgedAt: nowStamp() }); }}>{language === "ar" ? "إقرار" : "Acknowledge"}</Btn>}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Panel>
-    </div>
-  );
+      </div>
+    );
+  };
 
-  const renderMap = () => (
-    <div className="space-y-6">
-      <SectionHead title={language === "ar" ? "خريطة المباني" : "Buildings Map"} />
-      <Panel>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {snapshot.buildings.map(b => {
-            const guard = guardUsers.find(u => u.assignedBuildingId === b.id);
-            const todayReports = snapshot.reports.filter(r => r.buildingId === b.id && r.time.startsWith(today()));
-            return (
-              <div key={b.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="font-black text-amber-400">{language === "ar" ? b.nameAr : b.nameEn}</div>
-                    <div className="text-xs text-slate-400">{b.area}</div>
-                  </div>
-                  <Badge className={guard ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : "border-red-400/30 bg-red-500/15 text-red-300"}>
-                    {guard ? (language === "ar" ? "مراقب" : "Guarded") : (language === "ar" ? "غير مراقب" : "Unguarded")}
-                  </Badge>
-                </div>
-                {guard && <div className="mt-2 text-sm text-slate-300">👮 {guard.name}</div>}
-                {todayReports.length > 0 && <div className="mt-2 text-xs text-amber-400">⚠️ {todayReports.length} {language === "ar" ? "تقارير اليوم" : "reports today"}</div>}
-                {b.lat && <div className="mt-2 text-xs text-slate-500">📍 {b.lat.toFixed(4)}, {b.lng?.toFixed(4)}</div>}
-              </div>
-            );
-          })}
-        </div>
-      </Panel>
-    </div>
-  );
-
-  const renderScores = () => (
+    const renderScores = () => (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SectionHead title={language === "ar" ? "تقييم الحراس" : "Guard Ratings"} subtitle={language === "ar" ? "نقاط تلقائية" : "Auto-calculated"} />
