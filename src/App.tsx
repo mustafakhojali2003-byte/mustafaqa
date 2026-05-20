@@ -989,13 +989,18 @@ export default function App() {
     try {
       const data = JSON.parse(code);
       if (data.type === "building" && qrContext === "report") {
-        // QR scan for report - auto-fill building
-        const building = snapshot.buildings.find(b => b.id === data.buildingId);
+        // QR scan for report - match by id OR qrCode OR buildingName
+        const building = snapshot.buildings.find(b =>
+          b.id === data.buildingId ||
+          b.qrCode === data.buildingId ||
+          b.qrCode === data.qrCode ||
+          b.nameEn === data.buildingName
+        );
         if (building) {
-          setReportScannedBuilding(data.buildingId);
-          showToast(language === "ar" ? `✅ ${building.nameAr}` : `✅ ${building.nameEn}`, "success");
+          setReportScannedBuilding(building.id);
+          showToast(language === "ar" ? `✅ ${building.nameAr} — يمكنك الآن إرسال التقرير` : `✅ ${building.nameEn} — You can now submit the report`, "success");
         } else {
-          showToast(language === "ar" ? "مبنى غير معروف" : "Unknown building", "danger");
+          showToast(language === "ar" ? "❌ رمز QR غير معروف — تأكد أنه QR مبنى" : "❌ Unknown QR — make sure it's a building QR", "danger");
         }
       } else if (data.type === "building" && qrContext === "attendance") {
         const building = snapshot.buildings.find(b => b.id === data.buildingId);
