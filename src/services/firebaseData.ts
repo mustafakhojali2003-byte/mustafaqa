@@ -42,14 +42,15 @@ async function update(collectionName: string, id: string, data: object): Promise
 }
 
 // ─── Seed ─────────────────────────────────────────────────────────────────────
-export async function ensureRemoteSeed(users: User[], conversations: Conversation[]) {
+export async function ensureRemoteSeed(users: User[], _conversations: Conversation[]) {
   try {
+    // Only seed owner account if approved_users is empty
     const usersSnap = await getDocs(col("approved_users"));
-    if (usersSnap.empty)
-      await Promise.all(users.map(u => setDoc(doc(firestore, "approved_users", u.id), u)));
-    const convSnap = await getDocs(col("conversations"));
-    if (convSnap.empty)
-      await Promise.all(conversations.map(c => setDoc(doc(firestore, "conversations", c.id), c)));
+    if (usersSnap.empty) {
+      const owner = users.find(u => u.role === "owner");
+      if (owner) await setDoc(doc(firestore, "approved_users", owner.id), owner);
+    }
+    // Never seed reports/alerts/etc - those come from real usage
   } catch { }
 }
 
@@ -80,7 +81,15 @@ export function normalizeConversation(c: Conversation, message?: ChatMessage): C
 export const subscribeReports = (cb: (r: Report[]) => void) =>
   subscribe<Report>("reports", cb, "time");
 
-export const saveReport = (r: Report) => save("reports", r.id, r);
+export const saveReport = (r: Report) => {
+  // Strip base64 images before saving to Firestore (1MB doc limit)
+  // Store only metadata, image stays in localStorage
+  const firestoreReport = { ...r };
+  if (firestoreReport.mediaUrl && firestoreReport.mediaUrl.startsWith("data:")) {
+    firestoreReport.mediaUrl = "__local__"; // flag that image is local only
+  }
+  return save("reports", r.id, firestoreReport);
+};
 export const deleteReportRemote = (id: string) => remove("reports", id);
 
 // ─── Alerts ───────────────────────────────────────────────────────────────────

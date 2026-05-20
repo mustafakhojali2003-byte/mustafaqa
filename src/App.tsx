@@ -275,6 +275,8 @@ export default function App() {
   const [newUserForm, setNewUserForm] = useState({ name: "", email: "", phone: "", password: "", role: "guard" as Role, buildingId: buildSeedBuildings()[0].id });
 
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const reportPhotoRef = useRef<HTMLInputElement | null>(null);
+  const [reportScannedBuilding, setReportScannedBuilding] = useState<string>("");
   const reportMediaInputRef = useRef<HTMLInputElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recorderChunksRef = useRef<Blob[]>([]);
@@ -644,14 +646,30 @@ export default function App() {
   };
 
   // Reports
-  const submitReport = (e: FormEvent) => {
+  const submitReport = async (e: FormEvent) => {
     e.preventDefault();
     if (!currentUser || !reportForm.text.trim()) return;
-    const report: Report = { id: `r-${Date.now()}`, buildingId: reportForm.buildingId, text: reportForm.text.trim(), senderId: currentUser.id, senderName: currentUser.name, senderEmail: currentUser.email, senderPhone: currentUser.phone, time: nowStamp(), status: reportForm.status, mediaUrl: reportForm.mediaUrl || undefined, mediaKind: reportForm.mediaKind || undefined, fileName: reportForm.fileName || undefined };
+    // Use QR-scanned building if available, else form selection
+    const buildingId = reportScannedBuilding || reportForm.buildingId;
+    const report: Report = {
+      id: `r-${Date.now()}`,
+      buildingId,
+      text: reportForm.text.trim(),
+      senderId: currentUser.id,
+      senderName: currentUser.name,
+      senderEmail: currentUser.email,
+      senderPhone: currentUser.phone,
+      time: nowStamp(),
+      status: reportForm.status,
+      mediaUrl: reportForm.mediaUrl || undefined,
+      mediaKind: reportForm.mediaKind || undefined,
+      fileName: reportForm.fileName || undefined,
+    };
     void saveReport(report);
-    mutate(prev => ({ ...prev, reports: [report, ...prev.reports] }), language === "ar" ? "تم حفظ التقرير" : "Report saved");
+    mutate(prev => ({ ...prev, reports: [report, ...prev.reports] }), language === "ar" ? "✅ تم إرسال التقرير" : "✅ Report sent");
     pushSync("report");
     setReportForm(prev => ({ ...prev, text: "", status: "normal", mediaUrl: "", mediaKind: "", fileName: "" }));
+    setReportScannedBuilding("");
   };
 
   // Shifts
@@ -755,7 +773,16 @@ export default function App() {
     setQrModalOpen(false);
     try {
       const data = JSON.parse(code);
-      if (data.type === "building" && qrContext === "attendance") {
+      if (data.type === "building" && qrContext === "report") {
+        // QR scan for report - auto-fill building
+        const building = snapshot.buildings.find(b => b.id === data.buildingId);
+        if (building) {
+          setReportScannedBuilding(data.buildingId);
+          showToast(language === "ar" ? `✅ ${building.nameAr}` : `✅ ${building.nameEn}`, "success");
+        } else {
+          showToast(language === "ar" ? "مبنى غير معروف" : "Unknown building", "danger");
+        }
+      } else if (data.type === "building" && qrContext === "attendance") {
         const building = snapshot.buildings.find(b => b.id === data.buildingId);
         if (!building || !currentUser) return;
         if (currentUser.assignedBuildingId && currentUser.assignedBuildingId !== data.buildingId) { showToast(language === "ar" ? "⚠️ هذا المبنى غير مخصص لك" : "⚠️ Building mismatch", "danger"); return; }
@@ -1075,21 +1102,69 @@ export default function App() {
       </div>
       {(isGuard || isAdmin || isOwner) && (
         <Panel>
-          <form onSubmit={submitReport} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div><Lbl>{language === "ar" ? "المبنى" : "Building"}</Lbl>
-                <SelInput value={reportForm.buildingId} onChange={e => setReportForm(p => ({ ...p, buildingId: e.target.value }))}>
-                  {snapshot.buildings.map(b => <option key={b.id} value={b.id}>{language === "ar" ? b.nameAr : b.nameEn}</option>)}
-                </SelInput>
-              </div>
-              <div><Lbl>{language === "ar" ? "الحالة" : "Status"}</Lbl>
-                <SelInput value={reportForm.status} onChange={e => setReportForm(p => ({ ...p, status: e.target.value as ReportStatus }))}>
-                  {(Object.keys(reportStatusLabels) as ReportStatus[]).map(s => <option key={s} value={s}>{pair(language, reportStatusLabels[s])}</option>)}
-                </SelInput>
-              </div>
+          <input ref={reportPhotoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={async e => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const dataUrl = await fileToDataUrl(file);
+            setReportForm(p => ({ ...p, mediaUrl: dataUrl, mediaKind: "image", fileName: file.name }));
+            e.target.value = "";
+          }} />
+          <form onSubmit={e => { void submitReport(e); }} className="space-y-4">
+            {/* Building - QR scan or select */}
+            <div>
+              <Lbl>{language === "ar" ? "المبنى" : "Building"}</Lbl>
+              {reportScannedBuilding ? (
+                <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+                  <span className="text-2xl">✅</span>
+                  <div className="flex-1">
+                    <div className="font-black text-emerald-300">
+                      {formatBuilding(snapshot.buildings.find(b => b.id === reportScannedBuilding), language)}
+                    </div>
+                    <div className="text-xs text-slate-400">{language === "ar" ? "تم المسح بـ QR" : "Scanned via QR"}</div>
+                  </div>
+                  <button type="button" onClick={() => setReportScannedBuilding("")} className="text-slate-400 hover:text-white text-lg">✕</button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <SelInput value={reportForm.buildingId} onChange={e => setReportForm(p => ({ ...p, buildingId: e.target.value }))} className="flex-1">
+                    {snapshot.buildings.map(b => <option key={b.id} value={b.id}>{language === "ar" ? b.nameAr : b.nameEn}</option>)}
+                  </SelInput>
+                  <Btn type="button" variant="secondary" className="h-12 px-4 flex-shrink-0" onClick={() => {
+                    setQrContext("report");
+                    setQrModalOpen(true);
+                  }}>📷 QR</Btn>
+                </div>
+              )}
             </div>
-            <div><Lbl>{language === "ar" ? "التقرير" : "Report"}</Lbl><TxtArea rows={4} required value={reportForm.text} onChange={e => setReportForm(p => ({ ...p, text: e.target.value }))} placeholder={language === "ar" ? "اكتب تفاصيل التقرير هنا..." : "Write report details here..."} /></div>
-            <Btn type="submit">{language === "ar" ? "إرسال التقرير" : "Submit Report"}</Btn>
+
+            <div><Lbl>{language === "ar" ? "الحالة" : "Status"}</Lbl>
+              <SelInput value={reportForm.status} onChange={e => setReportForm(p => ({ ...p, status: e.target.value as ReportStatus }))}>
+                {(Object.keys(reportStatusLabels) as ReportStatus[]).map(s => <option key={s} value={s}>{pair(language, reportStatusLabels[s])}</option>)}
+              </SelInput>
+            </div>
+
+            <div><Lbl>{language === "ar" ? "التقرير" : "Report"}</Lbl>
+              <TxtArea rows={4} required value={reportForm.text} onChange={e => setReportForm(p => ({ ...p, text: e.target.value }))} placeholder={language === "ar" ? "اكتب تفاصيل التقرير هنا..." : "Write report details here..."} />
+            </div>
+
+            {/* Photo attachment */}
+            <div>
+              <Lbl>{language === "ar" ? "إرفاق صورة (اختياري)" : "Attach Photo (optional)"}</Lbl>
+              {reportForm.mediaUrl ? (
+                <div className="relative inline-block">
+                  <img src={reportForm.mediaUrl} alt="preview" className="max-h-40 rounded-2xl object-cover border border-white/10" />
+                  <button type="button" onClick={() => setReportForm(p => ({ ...p, mediaUrl: "", mediaKind: "", fileName: "" }))} className="absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white text-xs font-black">✕</button>
+                </div>
+              ) : (
+                <Btn type="button" variant="secondary" className="w-full" onClick={() => reportPhotoRef.current?.click()}>
+                  📷 {language === "ar" ? "التقاط صورة أو اختيار من المعرض" : "Take Photo or Choose from Gallery"}
+                </Btn>
+              )}
+            </div>
+
+            <Btn type="submit" className="w-full h-14 text-lg">
+              {language === "ar" ? "📤 إرسال التقرير" : "📤 Submit Report"}
+            </Btn>
           </form>
         </Panel>
       )}
