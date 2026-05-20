@@ -394,6 +394,14 @@ export default function App() {
     return Array.from(map.values()).sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
   }, [snapshot.violations, remoteViolations]);
 
+  // Computed at component level for header banner
+  const hasActiveEmergency = useMemo(() =>
+    mergedAlerts.some(a => a.severity === "critical" && !stoppedAlertIds.has(a.id)) ||
+    mergedSOSEvents.some(s => !s.resolved) ||
+    emergencyActive,
+    [mergedAlerts, mergedSOSEvents, emergencyActive, stoppedAlertIds]
+  );
+
   const mergedSOSEvents = useMemo(() => {
     const map = new Map<string, SOSEvent>();
     snapshot.sosEvents.forEach(s => map.set(s.id, s));
@@ -1011,7 +1019,7 @@ export default function App() {
     const todayReports = mergedReports.filter(r => r.time.startsWith(todayStr));
     const next24hVisitors = mergedVisitors.filter(v => v.arrivalDate === todayStr && v.status === "scheduled");
     const onlineGuards = guardUsers.filter(u => activeUserIds.includes(u.id));
-    const hasEmergency = mergedAlerts.some(a => a.severity === "critical") || mergedSOSEvents.some(s => !s.resolved);
+    const hasEmergency = mergedAlerts.some(a => a.severity === "critical" && !stoppedAlertIds.has(a.id)) || mergedSOSEvents.some(s => !s.resolved) || emergencyActive;
 
     // Guard-specific simplified dashboard
     if (isGuard && currentUser) {
@@ -2972,9 +2980,11 @@ export default function App() {
           🚨 {language === "ar" ? "تنبيه SOS نشط — تحقق من لوحة SOS" : "ACTIVE SOS ALERT — Check SOS Panel"}
         </div>
       )}
-      <div className="border-b border-emerald-400/20 bg-emerald-600/90 px-4 py-2 text-center text-sm font-black tracking-[0.22em]">
-        {language === "ar" ? "الوضع التشغيلي طبيعي" : "NORMAL OPERATING MODE"} · {APP_NAME}
-      </div>
+      {!hasActiveEmergency && (
+        <div className="border-b border-emerald-400/20 bg-emerald-600/90 px-4 py-2 text-center text-sm font-black tracking-[0.22em]">
+          {language === "ar" ? "الوضع التشغيلي طبيعي" : "NORMAL OPERATING MODE"} · {APP_NAME}
+        </div>
+      )}
       <header className="border-b border-white/10 bg-[#0a1024]">
         <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-4">
