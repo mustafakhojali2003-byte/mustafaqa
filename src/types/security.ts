@@ -1,9 +1,7 @@
 export type Language = "ar" | "en";
 export type Role = "owner" | "admin" | "guard";
 export type ReportStatus = "normal" | "warning" | "critical";
-export type Tab = "dashboard" | "reports" | "alerts" | "buildings" | "users" | "visitors" |
-  "attendance" | "tasks" | "chat" | "analytics" | "audit" | "system" | "settings" |
-  "shifts" | "violations" | "map" | "sos";
+export type Tab = "dashboard" | "reports" | "alerts" | "buildings" | "users" | "visitors" | "attendance" | "tasks" | "chat" | "analytics" | "audit" | "system" | "settings" | "shifts" | "violations" | "scores" | "patrol" | "map" | "sos";
 export type ToastTone = "success" | "danger" | "info";
 export type AuditSeverity = "info" | "warning" | "critical";
 

@@ -953,17 +953,9 @@ export default function App() {
     setReportScannedBuilding("");
   };
 
-  // Shifts
-  const addShift = (e: FormEvent) => {
-    e.preventDefault();
-    if (!shiftForm.guardId || !shiftForm.buildingId) return;
-    const guard = approvedUsers.find(u => u.id === shiftForm.guardId);
-    if (!guard) return;
-    const shift: Shift = { id: `s-${Date.now()}`, guardId: shiftForm.guardId, guardName: guard.name, buildingId: shiftForm.buildingId, date: shiftForm.date, startTime: shiftForm.startTime, endTime: shiftForm.endTime, status: "scheduled", createdAt: nowStamp() };
-    void saveShift(shift);
-    mutate(prev => ({ ...prev, shifts: [shift, ...prev.shifts] }), language === "ar" ? "تمت إضافة النوبة" : "Shift added");
-    setShiftForm({ guardId: "", buildingId: "", date: today(), startTime: "07:00", endTime: "19:00" });
-  };
+  // Shifts - see new addShift in renderShifts section
+  // This is a placeholder - actual addShift is defined below
+  const _addShiftPlaceholder = null;
 
   const endShift = (shiftId: string) => {
     if (!currentUser) return;
@@ -3668,6 +3660,78 @@ export default function App() {
           </Panel>
         ))}
       </div>
+    </div>
+  );
+
+  const renderViolations = () => (
+    <div className="space-y-6">
+      <SectionHead title={language === "ar" ? "المخالفات" : "Violations"} />
+      <Panel>
+        {isOwner && (
+          <form onSubmit={e => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
+            const guardId = fd.get("guardId") as string;
+            const type = fd.get("type") as string;
+            const description = fd.get("description") as string;
+            const severity = fd.get("severity") as "minor"|"major"|"critical";
+            if (!guardId || !type || !description) return;
+            const guard = approvedUsers.find(u => u.id === guardId);
+            if (!guard) return;
+            const v: Violation = { id: `v-${Date.now()}`, guardId, guardName: guard.name, type, description, severity, buildingId: guard.assignedBuildingId ?? "", date: today(), acknowledged: false, createdBy: currentUser?.name ?? "", createdAt: nowStamp() };
+            void saveViolation(v);
+            mutate(prev => ({
+              ...prev,
+              violations: [v, ...prev.violations],
+              users: prev.users.map(u => u.id === guardId ? { ...u, violations: (u.violations ?? 0) + 1 } : u),
+            }), language === "ar" ? "تم تسجيل المخالفة" : "Violation recorded");
+            void saveApprovedUser({ ...guard, violations: (guard.violations ?? 0) + 1 });
+            (e.target as HTMLFormElement).reset();
+          }} className="space-y-4 mb-6">
+            <div className="font-black text-white mb-3">{language === "ar" ? "تسجيل مخالفة جديدة" : "Record New Violation"}</div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div><Lbl>{language === "ar" ? "الحارس" : "Guard"}</Lbl>
+                <SelInput name="guardId" required>
+                  <option value="">{language === "ar" ? "اختر الحارس" : "Select guard"}</option>
+                  {guardUsers.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </SelInput>
+              </div>
+              <div><Lbl>{language === "ar" ? "نوع المخالفة" : "Type"}</Lbl><TxtInput name="type" required placeholder={language === "ar" ? "مثال: تأخر، غياب..." : "e.g. Late, Absent..."} /></div>
+              <div><Lbl>{language === "ar" ? "الخطورة" : "Severity"}</Lbl>
+                <SelInput name="severity">
+                  <option value="minor">{language === "ar" ? "بسيطة" : "Minor"}</option>
+                  <option value="major">{language === "ar" ? "متوسطة" : "Major"}</option>
+                  <option value="critical">{language === "ar" ? "حرجة" : "Critical"}</option>
+                </SelInput>
+              </div>
+              <div><Lbl>{language === "ar" ? "الوصف" : "Description"}</Lbl><TxtInput name="description" required /></div>
+            </div>
+            <Btn type="submit" className="w-full">{language === "ar" ? "تسجيل المخالفة" : "Record Violation"}</Btn>
+          </form>
+        )}
+        {mergedViolations.length === 0
+          ? <EmptyMsg title={language === "ar" ? "لا مخالفات" : "No Violations"} text="" />
+          : mergedViolations.map(v => (
+            <div key={v.id} className={`mb-3 rounded-2xl border p-4 ${v.severity === "critical" ? "border-red-500/30 bg-red-500/5" : v.severity === "major" ? "border-amber-500/20 bg-amber-500/5" : "border-white/10 bg-white/5"}`}>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <div className="font-black text-white">{v.guardName} <span className="text-xs text-slate-400 font-normal">· {v.date}</span></div>
+                  <div className="text-sm text-slate-300 mt-1">{v.type} — {v.description}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge className={v.severity === "critical" ? "border-red-400/30 bg-red-500/15 text-red-300" : v.severity === "major" ? "border-amber-400/30 bg-amber-500/15 text-amber-300" : "border-slate-400/30 bg-slate-500/15 text-slate-300"}>{v.severity}</Badge>
+                  {!v.acknowledged && isOwner && (
+                    <Btn variant="secondary" className="h-7 px-2 text-xs" onClick={() => {
+                      mutate(prev => ({ ...prev, violations: prev.violations.map(x => x.id === v.id ? { ...x, acknowledged: true } : x) }));
+                      void updateViolationRemote(v.id, { acknowledged: true });
+                    }}>{language === "ar" ? "إقرار" : "Ack"}</Btn>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))
+        }
+      </Panel>
     </div>
   );
 
