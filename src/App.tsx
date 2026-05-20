@@ -79,8 +79,12 @@ function formatTime(dateStr: string, use24h: boolean): string {
   try {
     const d = new Date(dateStr.replace(" ", "T"));
     if (isNaN(d.getTime())) return dateStr;
-    const date = d.toLocaleDateString("ar-SA", { day: "2-digit", month: "2-digit", year: "numeric" });
-    const time = d.toLocaleTimeString(use24h ? "en-GB" : "en-US", {
+    // Always use en-US for numbers (no Arabic-Indic numerals)
+    const day   = String(d.getDate()).padStart(2, "0");
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const year  = d.getFullYear();
+    const date  = `${year}/${month}/${day}`;
+    const time  = d.toLocaleTimeString("en-US", {
       hour: "2-digit", minute: "2-digit", hour12: !use24h,
     });
     return `${date} · ${time}`;
@@ -91,7 +95,7 @@ function formatTimeOnly(dateStr: string, use24h: boolean): string {
   try {
     const d = new Date(dateStr.replace(" ", "T"));
     if (isNaN(d.getTime())) return dateStr.split(" ")[1] ?? dateStr;
-    return d.toLocaleTimeString(use24h ? "en-GB" : "en-US", {
+    return d.toLocaleTimeString("en-US", {
       hour: "2-digit", minute: "2-digit", hour12: !use24h,
     });
   } catch { return dateStr.split(" ")[1] ?? dateStr; }
