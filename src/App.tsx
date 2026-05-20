@@ -2299,7 +2299,26 @@ export default function App() {
 
     const renderAttendance = () => (
     <div className="space-y-6">
-      <SectionHead title={language === "ar" ? "الحضور" : "Attendance"} subtitle={language === "ar" ? "يجب مسح رمز QR للمبنى المخصص لك" : "Scan the QR code of your assigned building"} />
+      <SectionHead title={language === "ar" ? "الحضور" : "Attendance"} subtitle={language === "ar" ? "مسح QR المبنى المخصص لك فقط" : "Scan your assigned building QR only"} />
+      {/* Today's status */}
+      {isGuard && currentUser && (() => {
+        const todayStr = today();
+        const myRecs = mergedAttendance.filter(a => a.userId === currentUser.id && a.time.startsWith(todayStr)).sort((a,b) => b.time.localeCompare(a.time));
+        const last = myRecs[0];
+        const isCheckedIn = last && !last.checkOut;
+        return (
+          <div className={`rounded-2xl border p-4 flex items-center gap-4 ${isCheckedIn ? "border-emerald-500/30 bg-emerald-500/10" : "border-slate-500/20 bg-white/5"}`}>
+            <span className="text-3xl">{isCheckedIn ? "✅" : "🔴"}</span>
+            <div>
+              <div className={`font-black ${isCheckedIn ? "text-emerald-300" : "text-slate-400"}`}>
+                {isCheckedIn ? (language === "ar" ? "أنت مسجل حضوراً" : "You are clocked in") : (language === "ar" ? "لم تسجل حضوراً اليوم" : "Not clocked in today")}
+              </div>
+              {last && <div className="text-xs text-slate-400">{language === "ar" ? "منذ:" : "Since:"} {last.time}</div>}
+              {isCheckedIn && last?.checkOut && <div className="text-xs text-slate-400">{language === "ar" ? "خروج:" : "Out:"} {last.checkOut}</div>}
+            </div>
+          </div>
+        );
+      })()}
       <Panel>
         <div className="flex flex-col items-center gap-4 py-4">
           <div className="text-6xl">📷</div>
@@ -2308,14 +2327,30 @@ export default function App() {
               ? `امسح رمز QR الخاص بـ ${formatBuilding(snapshot.buildings.find(b => b.id === currentUser?.assignedBuildingId), language)} لتسجيل حضورك`
               : `Scan the QR code of ${formatBuilding(snapshot.buildings.find(b => b.id === currentUser?.assignedBuildingId), language)} to clock in`}
           </p>
-          <div className="rounded-2xl border border-amber-400/20 bg-amber-500/5 p-4 text-center text-sm text-amber-300">
-            {language === "ar"
-              ? "🔒 رمز QR الخاص بمبناك سيُعطى لك من المالك لطباعته والوصول إليه فقط في الموقع"
-              : "🔒 Your building's QR code will be given to you by the owner for on-site use only"}
+          {/* Show assigned building */}
+          {currentUser?.assignedBuildingId ? (
+            <div className="rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4 text-center">
+              <div className="text-xs text-slate-400 mb-1">{language === "ar" ? "مبناك المخصص" : "Your Assigned Building"}</div>
+              <div className="font-black text-sky-300 text-lg">{formatBuilding(snapshot.buildings.find(b => b.id === currentUser.assignedBuildingId), language)}</div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 text-center text-sm text-red-300">
+              ⚠️ {language === "ar" ? "لا يوجد مبنى مخصص لك — تواصل مع المالك" : "No building assigned — contact the owner"}
+            </div>
+          )}
+
+          {/* QR Scan button - only works for assigned building */}
+          {currentUser?.assignedBuildingId && (
+            <Btn onClick={() => { setQrContext("attendance"); setQrModalOpen(true); }} className="h-16 px-8 text-lg w-full">
+              📷 {language === "ar" ? "مسح QR المبنى لتسجيل الحضور" : "Scan Building QR to Clock In/Out"}
+            </Btn>
+          )}
+
+          <div className="rounded-2xl border border-amber-400/20 bg-amber-500/5 p-3 text-center text-xs text-amber-400">
+            🔒 {language === "ar"
+              ? "يجب مسح رمز QR الخاص بمبناك فقط — لن يُقبل QR أي مبنى آخر"
+              : "You must scan your assigned building's QR only — other buildings will be rejected"}
           </div>
-          <Btn onClick={clockIn} className="h-14 px-8 text-lg">
-            ✅ {language === "ar" ? "تسجيل حضور" : "Clock In"}
-          </Btn>
         </div>
       </Panel>
       <div className="space-y-3">
