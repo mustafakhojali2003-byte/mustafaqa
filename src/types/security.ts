@@ -115,7 +115,7 @@ export interface AppSnapshot {
 export interface Toast { text: string; tone: ToastTone; }
 export interface NewAccountPayload {
   name: string; email: string; phone: string; password: string;
-  role: Role; buildingId: string;
+  role: Role; buildingId: string; securityNumber?: string;
 }
 export interface VisitorFormPayload {
   guestName: string; company: string; purpose: string;

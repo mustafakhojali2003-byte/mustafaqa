@@ -30,6 +30,7 @@ export default function AuthScreen({
     name: "",
     email: "",
     phone: "",
+    securityNumber: "",
     role: "guard",
     buildingId: buildings[0]?.id ?? "gate-1",
     password: "",
@@ -49,6 +50,7 @@ export default function AuthScreen({
     if (createForm.password.length < 6) return setLocalError(language === "ar" ? "كلمة السر يجب أن تكون 6 أحرف على الأقل" : "Password must be at least 6 characters");
     if (createForm.password !== createForm.confirmPassword) return setLocalError(language === "ar" ? "كلمتا السر غير متطابقتين" : "Passwords do not match");
     if (createForm.role === "guard" && !createForm.phone.trim()) return setLocalError(language === "ar" ? "يرجى إدخال رقم الهاتف" : "Please enter your phone number");
+    if (createForm.role === "guard" && !createForm.securityNumber?.trim()) return setLocalError(language === "ar" ? "يرجى إدخال الرقم الوظيفي / رقم السكيورتي" : "Please enter your Security/Employee ID");
     const { confirmPassword, ...payload } = createForm;
     void confirmPassword;
     await onCreateAccount(payload);
@@ -189,6 +191,16 @@ export default function AuthScreen({
                         <div>
                           <label className="mb-2 block text-sm font-semibold text-slate-400">{language === "ar" ? "الجوال" : "Phone"}</label>
                           <input value={createForm.phone} onChange={(event) => setCreateForm((previous) => ({ ...previous, phone: event.target.value }))} className="h-12 w-full rounded-2xl border border-white/10 bg-[#070d22] px-4 text-white outline-none" required />
+                        </div>
+                        <div>
+                          <Lbl>{language === "ar" ? "الرقم الوظيفي / رقم السكيورتي" : "Security / Employee ID"}</Lbl>
+                          <input
+                            value={createForm.securityNumber ?? ""}
+                            onChange={(event) => setCreateForm((previous) => ({ ...previous, securityNumber: event.target.value }))}
+                            className="h-12 w-full rounded-2xl border border-white/10 bg-[#070d22] px-4 text-white outline-none font-mono"
+                            placeholder="SEC-0001"
+                            required
+                          />
                         </div>
                         <div className="md:col-span-2">
                           <label className="mb-2 block text-sm font-semibold text-slate-400">{language === "ar" ? "المبنى المطلوب" : "Requested Building"}</label>
