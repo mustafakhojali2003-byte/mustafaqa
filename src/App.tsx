@@ -334,6 +334,27 @@ export default function App() {
   const [deletedUserIds, setDeletedUserIds] = useState<Set<string>>(new Set());
   const [pendingUserId, setPendingUserId] = useState<string | null>(() => window.localStorage.getItem("mustafaqa-pending-id") || null);
   const [loginAttempts, setLoginAttempts] = useState<number>(0);
+
+  // Unlock AudioContext on first user interaction (required by browser policy)
+  useEffect(() => {
+    const unlock = () => {
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          ctx.resume().then(() => ctx.close());
+        }
+      } catch { /* ignore */ }
+      document.removeEventListener("touchstart", unlock);
+      document.removeEventListener("click", unlock);
+    };
+    document.addEventListener("touchstart", unlock, { once: true });
+    document.addEventListener("click", unlock, { once: true });
+    return () => {
+      document.removeEventListener("touchstart", unlock);
+      document.removeEventListener("click", unlock);
+    };
+  }, []);
   const [loginLockedUntil, setLoginLockedUntil] = useState<number>(0);
   const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
   const [editReportId, setEditReportId] = useState<string | null>(null);
@@ -645,7 +666,7 @@ export default function App() {
     const unsubFCM = listenForegroundMessages((title, body, type) => {
       const isCritical = type === "emergency" || type === "sos";
       showToast(`${title}: ${body}`, isCritical ? "danger" : "info");
-      if (isCritical) { startEmergencySound(); setEmergencyActive(true); vibrateEmergency(); }
+      if (isCritical) { void startEmergencySound(); setEmergencyActive(true); vibrateEmergency(); }
       else { playNormalAlertSound(true); vibrateDevice(); }
     });
 
@@ -777,7 +798,7 @@ export default function App() {
       // Fire = siren. Flood/Other = normal sound only
       // ALL alerts trigger siren - any alert is an emergency
       if (latest.sender !== currentUser.name) {
-        startEmergencySound();
+        void startEmergencySound();
         setEmergencyActive(true);
         vibrateEmergency();
       }
@@ -954,7 +975,7 @@ export default function App() {
   const triggerSOS = useCallback(async () => {
     if (!currentUser) return;
     setSosActive(true);
-    startEmergencySound(); setEmergencyActive(true); vibrateEmergency();
+    void startEmergencySound(); setEmergencyActive(true); vibrateEmergency();
     let lat: number | undefined; let lng: number | undefined; let address: string | undefined;
     try {
       const pos = await new Promise<GeolocationPosition>((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000 }));
@@ -1707,7 +1728,7 @@ export default function App() {
             <Btn variant="sos" className="h-24 w-48 text-xl rounded-3xl" onClick={() => {
               if (!currentUser) return;
               setSosActive(true);
-              startEmergencySound();
+              void startEmergencySound();
               setEmergencyActive(true);
               navigator.geolocation?.getCurrentPosition(pos => {
                 const address = `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
@@ -3185,7 +3206,7 @@ export default function App() {
     mutate(prev => ({ ...prev, alerts: [alert, ...prev.alerts] }));
     // Siren + vibration + push notification
     if (isCritical) {
-      startEmergencySound();
+      void startEmergencySound();
       setEmergencyActive(true);
       vibrateEmergency();
     } else {

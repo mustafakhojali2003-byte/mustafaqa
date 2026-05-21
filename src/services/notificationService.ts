@@ -120,8 +120,8 @@ function playEmergencyLoop(ctx: AudioContext) {
 
   // Two-phase siren: high ↓ low → repeat
   const phases = [
-    { startFreq: 1300, endFreq: 700, duration: 0.6 },
-    { startFreq: 700, endFreq: 1300, duration: 0.6 },
+    { startFreq: 1400, endFreq: 600, duration: 0.8 },
+    { startFreq: 600,  endFreq: 1400, duration: 0.8 },
   ];
 
   let offset = 0;
@@ -131,7 +131,7 @@ function playEmergencyLoop(ctx: AudioContext) {
     osc.type = "sawtooth";
     osc.frequency.setValueAtTime(startFreq, ctx.currentTime + offset);
     osc.frequency.linearRampToValueAtTime(endFreq, ctx.currentTime + offset + duration);
-    gain.gain.value = 0.35;
+    gain.gain.value = 0.9;
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start(ctx.currentTime + offset);
@@ -146,10 +146,15 @@ function playEmergencyLoop(ctx: AudioContext) {
   }, totalDuration * 1000);
 }
 
-export function startEmergencySound() {
+export async function startEmergencySound() {
   if (emergencyRunning) return;
   const ctx = getAudioContext();
   if (!ctx) return;
+  // Resume AudioContext if suspended (browser autoplay policy)
+  if (ctx.state === "suspended") {
+    try { await ctx.resume(); } catch { return; }
+  }
+  if (ctx.state !== "running") return;
   emergencyContext = ctx;
   emergencyRunning = true;
   playEmergencyLoop(ctx);
