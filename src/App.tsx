@@ -326,6 +326,7 @@ export default function App() {
   const [qrModalBuilding, setQrModalBuilding] = useState<string | null>(null);
   const [stoppedAlertIds, setStoppedAlertIds] = useState<Set<string>>(new Set());
   const [deletedUserIds, setDeletedUserIds] = useState<Set<string>>(new Set());
+  const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
   const [editReportId, setEditReportId] = useState<string | null>(null);
   const [editReportForm, setEditReportForm] = useState({ text: "", status: "normal" as ReportStatus });
   const [commentingReportId, setCommentingReportId] = useState<string | null>(null);
@@ -1104,14 +1105,7 @@ export default function App() {
       auditLog: [createAuditEntry(currentUser, "delete_user", userId, "تم حذف المستخدم", "warning"), ...prev.auditLog],
     }));
     setDeletedUserIds(prev => new Set([...prev, userId]));
-    // Save deletion to a "blocked_users" collection so all devices know
-    try {
-      const { setDoc, doc } = await import("firebase/firestore");
-      const { firestore } = await import("./services/firebase");
-      await setDoc(doc(firestore, "blocked_users", userId), {
-        deletedAt: nowStamp(), deletedBy: currentUser?.name ?? "owner", userId
-      });
-    } catch { /* ignore */ }
+// Account deleted - not blocked (can re-register)
     // Also delete their FCM tokens so they stop receiving notifications
     try {
       const { deleteDoc, doc, collection, getDocs, query, where } = await import("firebase/firestore");
@@ -1119,7 +1113,31 @@ export default function App() {
       const tokSnap = await getDocs(query(collection(firestore, "fcm_tokens"), where("userId", "==", userId)));
       tokSnap.forEach(d => deleteDoc(d.ref));
     } catch { /* ignore */ }
-    showToast(language === "ar" ? "✅ تم حذف المستخدم وإيقاف وصوله فوراً" : "✅ User deleted and access revoked", "success");
+    showToast(language === "ar" ? "✅ تم حذف المستخدم نهائياً" : "✅ User permanently deleted", "success");
+  };
+
+  const blockUser = async (userId: string, userName: string) => {
+    if (!currentUser) return;
+    try {
+      const { setDoc, doc } = await import("firebase/firestore");
+      const { firestore } = await import("./services/firebase");
+      await setDoc(doc(firestore, "blocked_users", userId), {
+        blockedAt: nowStamp(), blockedBy: currentUser.name, userId, userName, reason: "manual_block"
+      });
+      setBlockedUserIds(prev => new Set([...prev, userId]));
+      showToast(language === "ar" ? `🚫 تم حظر ${userName} — لن يستطيع الدخول حتى ترفع الحظر` : `🚫 ${userName} blocked — cannot login until unblocked`, "success");
+    } catch { showToast(language === "ar" ? "خطأ في الحظر" : "Block failed", "danger"); }
+  };
+
+  const unblockUser = async (userId: string, userName: string) => {
+    if (!currentUser) return;
+    try {
+      const { deleteDoc, doc } = await import("firebase/firestore");
+      const { firestore } = await import("./services/firebase");
+      await deleteDoc(doc(firestore, "blocked_users", userId));
+      setBlockedUserIds(prev => { const n = new Set(prev); n.delete(userId); return n; });
+      showToast(language === "ar" ? `✅ تم رفع الحظر عن ${userName}` : `✅ ${userName} unblocked`, "success");
+    } catch { showToast(language === "ar" ? "خطأ" : "Error", "danger"); }
   };
 
   const requestDesktopNotification = async () => {
