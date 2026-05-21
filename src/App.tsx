@@ -15,6 +15,7 @@ import type { AlertLog, AppSnapshot, AttendanceRecord, AuditEntry, AuditSeverity
 
 const STORAGE_KEY = "mustafaqa-v1";
 const SESSION_KEY = "mustafaqa-session-v1";
+const OWNER_ID = "owner-mustafa-2024"; // owner is immutable
 const LANGUAGE_KEY = "mustafaqa-lang-v1";
 const SYNC_KEY = "mustafaqa-sync-v1";
 const ACTIVE_KEY = "mustafaqa-active-v1";
@@ -791,17 +792,19 @@ export default function App() {
 
   // ─── Auto-logout if current user deleted from Firebase ──────────────────────
   useEffect(() => {
-    if (!currentUser) return;
-    // If current user disappears from approved users list → force logout
-    const stillExists = approvedUsers.some(u => u.id === currentUser.id) ||
-      currentUser.email === OWNER_EMAIL; // owner is never deleted
-    if (!stillExists && !deletedUserIds.has(currentUser.id)) {
-      // User was deleted by owner from another device
-      setCurrentUser(null);
-      setSnapshot(defaultSnapshot());
-      showToast(language === "ar" ? "⚠️ تم حذف حسابك من قِبل المالك" : "⚠️ Your account was deleted by the owner", "danger");
+    if (!currentUserId) return;
+    if (currentUserId === OWNER_ID) return; // owner cannot be deleted
+    // Check if current user still exists in remote Firebase data
+    const existsInRemote = remoteApprovedUsers.some(u => u.id === currentUserId);
+    const existsInLocal = snapshot.users.some(u => u.id === currentUserId && u.status === "approved");
+    // If remoteApprovedUsers has loaded (not empty) and user is gone → logout
+    if (remoteApprovedUsers.length > 0 && !existsInRemote && !existsInLocal) {
+      // Force logout - clear session
+      window.localStorage.removeItem(SESSION_KEY);
+      setCurrentUserId(null);
+      showToast(language === "ar" ? "⚠️ تم حذف حسابك — تم تسجيل خروجك تلقائياً" : "⚠️ Your account was deleted — logged out automatically", "danger");
     }
-  }, [approvedUsers, currentUser]);
+  }, [remoteApprovedUsers, currentUserId, snapshot.users]);
 
   // ─── Auto-stop siren if no active critical alerts ────────────────────────────
   useEffect(() => {
@@ -1101,6 +1104,14 @@ export default function App() {
       auditLog: [createAuditEntry(currentUser, "delete_user", userId, "تم حذف المستخدم", "warning"), ...prev.auditLog],
     }));
     setDeletedUserIds(prev => new Set([...prev, userId]));
+    // Save deletion to a "blocked_users" collection so all devices know
+    try {
+      const { setDoc, doc } = await import("firebase/firestore");
+      const { firestore } = await import("./services/firebase");
+      await setDoc(doc(firestore, "blocked_users", userId), {
+        deletedAt: nowStamp(), deletedBy: currentUser?.name ?? "owner", userId
+      });
+    } catch { /* ignore */ }
     // Also delete their FCM tokens so they stop receiving notifications
     try {
       const { deleteDoc, doc, collection, getDocs, query, where } = await import("firebase/firestore");
