@@ -1,16 +1,53 @@
 {
+  "id": "/",
   "name": "MUSTAFA.QA Security Platform",
   "short_name": "MUSTAFA.QA",
-  "description": "نظام إدارة الأمن المتكامل",
+  "description": "نظام إدارة الأمن المتكامل - Integrated Security Management System",
   "start_url": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
   "background_color": "#040818",
-  "theme_color": "#040818",
+  "theme_color": "#F59E0B",
   "orientation": "portrait-primary",
-  "icons": [
-    { "src": "/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
-  ],
-  "categories": ["business", "security", "productivity"],
+  "scope": "/",
   "lang": "ar",
-  "dir": "rtl"
+  "dir": "rtl",
+  "categories": ["business", "productivity", "security"],
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "التقارير",
+      "short_name": "Reports",
+      "description": "إرسال تقرير جديد",
+      "url": "/?tab=reports",
+      "icons": [{ "src": "/logo.svg", "sizes": "any" }]
+    },
+    {
+      "name": "التنبيهات",
+      "short_name": "Alerts",
+      "description": "إرسال تنبيه طارئ",
+      "url": "/?tab=alerts",
+      "icons": [{ "src": "/logo.svg", "sizes": "any" }]
+    }
+  ]
 }
