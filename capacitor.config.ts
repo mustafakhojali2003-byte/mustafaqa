@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'qa.mustafa.security',
-  appName: 'MUSTAFA.QA',
+  appName: 'QGuard',
   webDir: 'dist',
   server: {
     // Use live URL so always up to date

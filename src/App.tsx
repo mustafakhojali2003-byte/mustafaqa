@@ -22,7 +22,7 @@ const ACTIVE_KEY = "mustafaqa-active-v1";
 const REPORTS_PER_PAGE = 6;
 const VISITOR_REMINDER_MINUTES = 30;
 const VISITOR_ARRIVAL_REMIND_MINUTES = 15;
-const APP_NAME = "MUSTAFA.QA";
+const APP_NAME = "QGuard";
 
 const roleLabels: Record<Role, Pair> = {
   owner: { ar: "المالك / المشرف العام", en: "Owner / Super Admin" },
@@ -186,9 +186,9 @@ function buildSeedState(): AppSnapshot {
   const allPerms = Object.keys(permissionLabels);
   const users: User[] = [
     { id: "owner-1", name: "Mustafa Khojali", email: "mustafakhojali884@gmail.com", phone: "0555555555", role: "owner", status: "approved", permissions: allPerms, rating: 5, passwordHash: hashPassword("mus2003kh"), soundEnabled: true, desktopNotificationsEnabled: true, showFullToAdmin: true, createdAt: "2026-05-01 08:00", violations: 0 },
-    { id: "admin-1", name: "Abeer Al-Harbi", email: "abeer.admin@mustafa.qa", phone: "", role: "admin", status: "approved", permissions: ["reports", "alerts", "attendance", "buildings", "viewReports", "chat", "visitors", "shifts", "violations"], rating: 4.8, passwordHash: hashPassword("admin123"), soundEnabled: true, desktopNotificationsEnabled: true, showFullToAdmin: true, createdAt: "2026-05-01 08:10", violations: 0 },
-    { id: "guard-1", name: "Fatuma Osman", email: "fatuma@mustafa.qa", phone: "0507788991", role: "guard", status: "approved", assignedBuildingId: "gate-1", permissions: ["reports", "attendance", "chat", "buildings", "visitors", "sos"], rating: 4.9, passwordHash: hashPassword("guard123"), soundEnabled: true, desktopNotificationsEnabled: true, showFullToAdmin: false, createdAt: "2026-05-01 08:18", violations: 0 },
-    { id: "guard-2", name: "Ayman Saeed", email: "ayman@mustafa.qa", phone: "0503344551", role: "guard", status: "approved", assignedBuildingId: "gate-2", permissions: ["reports", "attendance", "chat", "buildings", "visitors", "sos"], rating: 4.6, passwordHash: hashPassword("guard456"), soundEnabled: true, desktopNotificationsEnabled: false, showFullToAdmin: false, createdAt: "2026-05-01 08:20", violations: 1 },
+    { id: "admin-1", name: "Abeer Al-Harbi", email: "abeer.admin@qguard", phone: "", role: "admin", status: "approved", permissions: ["reports", "alerts", "attendance", "buildings", "viewReports", "chat", "visitors", "shifts", "violations"], rating: 4.8, passwordHash: hashPassword("admin123"), soundEnabled: true, desktopNotificationsEnabled: true, showFullToAdmin: true, createdAt: "2026-05-01 08:10", violations: 0 },
+    { id: "guard-1", name: "Fatuma Osman", email: "fatuma@qguard", phone: "0507788991", role: "guard", status: "approved", assignedBuildingId: "gate-1", permissions: ["reports", "attendance", "chat", "buildings", "visitors", "sos"], rating: 4.9, passwordHash: hashPassword("guard123"), soundEnabled: true, desktopNotificationsEnabled: true, showFullToAdmin: false, createdAt: "2026-05-01 08:18", violations: 0 },
+    { id: "guard-2", name: "Ayman Saeed", email: "ayman@qguard", phone: "0503344551", role: "guard", status: "approved", assignedBuildingId: "gate-2", permissions: ["reports", "attendance", "chat", "buildings", "visitors", "sos"], rating: 4.6, passwordHash: hashPassword("guard456"), soundEnabled: true, desktopNotificationsEnabled: false, showFullToAdmin: false, createdAt: "2026-05-01 08:20", violations: 1 },
   ];
 
   const todayStr = today();
@@ -204,8 +204,8 @@ function buildSeedState(): AppSnapshot {
   return {
     buildings, users,
     reports: [
-      { id: "r1", buildingId: "gate-1", text: "حركة الدخول طبيعية وتم التحقق من الهويات.", senderId: "guard-2", senderName: "Ayman Saeed", senderEmail: "ayman@mustafa.qa", senderPhone: "0503344551", time: "2026-05-06 08:43", status: "normal" },
-      { id: "r2", buildingId: "gate-1", text: "ازدحام بسيط عند البوابة تم تنظيمه.", senderId: "guard-1", senderName: "Fatuma Osman", senderEmail: "fatuma@mustafa.qa", senderPhone: "0507788991", time: "2026-05-06 08:45", status: "warning" },
+      { id: "r1", buildingId: "gate-1", text: "حركة الدخول طبيعية وتم التحقق من الهويات.", senderId: "guard-2", senderName: "Ayman Saeed", senderEmail: "ayman@qguard", senderPhone: "0503344551", time: "2026-05-06 08:43", status: "normal" },
+      { id: "r2", buildingId: "gate-1", text: "ازدحام بسيط عند البوابة تم تنظيمه.", senderId: "guard-1", senderName: "Fatuma Osman", senderEmail: "fatuma@qguard", senderPhone: "0507788991", time: "2026-05-06 08:45", status: "warning" },
     ],
     alerts: [{ id: "a1", status: "Visitor / زائر", target: "Guards only / الحراس فقط", text: "تمت إضافة زائر مجدول لهذا اليوم.", sender: "Mustafa Khojali", time: "2026-05-05 08:15", severity: "info" }],
     attendance: [
@@ -222,9 +222,9 @@ function buildSeedState(): AppSnapshot {
       { id: "c1", participantId: "guard-1", participantName: "Fatuma Osman", participantRole: "guard", messages: [{ id: "m1", senderId: "owner-1", kind: "text", text: "أهلاً فاطمة، يمكنك رفع أي ملاحظة عاجلة هنا.", time: "08:10" }] },
       { id: "c2", participantId: "guard-2", participantName: "Ayman Saeed", participantRole: "guard", messages: [{ id: "m3", senderId: "guard-2", kind: "text", text: "تم فحص البوابة 2 ولا توجد ملاحظات.", time: "08:22" }] },
     ],
-    auditLog: [createAuditEntry(null, "system_seed", "platform", "تم تهيئة بيانات MUSTAFA.QA", "info")],
+    auditLog: [createAuditEntry(null, "system_seed", "platform", "تم تهيئة بيانات QGuard", "info")],
     systemSettings: {
-      emergencyContact: "999", welcomeAr: "يرجى الالتزام بجميع تعليمات النوبة.", welcomeEn: "Please comply with shift instructions.", criticalEmail: "security@mustafa.qa", criticalSms: "+97455555555", visitorReminderMinutes: VISITOR_REMINDER_MINUTES, orgName: APP_NAME, shiftStartHour: 7, shiftEndHour: 19,
+      emergencyContact: "999", welcomeAr: "يرجى الالتزام بجميع تعليمات النوبة.", welcomeEn: "Please comply with shift instructions.", criticalEmail: "security@qguard", criticalSms: "+97455555555", visitorReminderMinutes: VISITOR_REMINDER_MINUTES, orgName: APP_NAME, shiftStartHour: 7, shiftEndHour: 19,
     },
     shifts, violations, sosEvents,
   };
@@ -4354,7 +4354,7 @@ export default function App() {
             </div>
             <div>
               <div className="text-4xl font-black tracking-wide text-amber-400">{APP_NAME}</div>
-              <div className="text-sm font-semibold text-slate-400">Integrated Security Platform</div>
+              <div className="text-sm font-semibold text-slate-400">منصة الأمن المتكاملة</div>
             </div>
           </div>
           <div className="text-center lg:text-end">

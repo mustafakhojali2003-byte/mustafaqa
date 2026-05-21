@@ -1,5 +1,5 @@
 {
-  "name": "react-vite-tailwind",
+  "name": "qguard",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -38,5 +38,6 @@
     "typescript": "5.9.3",
     "vite": "7.3.2",
     "vite-plugin-singlefile": "2.3.0"
-  }
+  },
+  "description": "QGuard - Integrated Security Platform"
 }

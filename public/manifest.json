@@ -1,8 +1,8 @@
 {
   "id": "qa.mustafa.security",
-  "name": "MUSTAFA.QA",
-  "short_name": "MUSTAFA.QA",
-  "description": "Integrated Security Management System",
+  "name": "QGuard Security Platform",
+  "short_name": "QGuard",
+  "description": "منصة الأمن المتكاملة - Integrated Security Management",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -29,12 +29,22 @@
     {
       "name": "التقارير",
       "url": "/?tab=reports",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
       "name": "التنبيهات",
       "url": "/?tab=alerts",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     }
   ]
 }
