@@ -316,6 +316,7 @@ export default function App() {
   const [buildingSearch, setBuildingSearch] = useState("");
   const [activePatrol, setActivePatrol] = useState<PatrolRound | null>(null);
   const [patrolRoutes, setPatrolRoutes] = useState<PatrolRoute[]>([]);
+  const [remotePatrolRoutes, setRemotePatrolRoutes] = useState<PatrolRoute[]>([]);
   const [showCreateRoute, setShowCreateRoute] = useState(false);
   const [newRouteName, setNewRouteName] = useState({ ar: "", en: "" });
   const [selectedRouteBuildings, setSelectedRouteBuildings] = useState<string[]>([]);
@@ -1992,7 +1993,8 @@ export default function App() {
 
       {/* Guard: my assigned route */}
       {isGuard && currentUser && (() => {
-        const myRoute = patrolRoutes.find(r => r.assignedGuardId === currentUser.id && r.active);
+        const allRoutes = [...remotePatrolRoutes, ...patrolRoutes.filter(r => !remotePatrolRoutes.some(x => x.id === r.id))];
+      const myRoute = allRoutes.find(r => r.assignedGuardId === currentUser.id && r.active);
         return myRoute ? (
           <Panel className="border-amber-400/20">
             <div className="mb-3 flex items-center justify-between">
@@ -2065,9 +2067,12 @@ export default function App() {
       {isGuard && !activePatrol && (
         <Panel>
           <div className="mb-3 font-black text-white">{language === "ar" ? "مسارات متاحة" : "Available Routes"}</div>
-          {patrolRoutes.filter(r => r.active).length === 0
+          {(() => {
+            const allRoutes = [...remotePatrolRoutes, ...patrolRoutes.filter(r => !remotePatrolRoutes.some(x => x.id === r.id))];
+            return allRoutes;
+          })().filter(r => r.active).length === 0
             ? <div className="text-sm text-slate-500 text-center py-2">{language === "ar" ? "لا مسارات نشطة" : "No active routes"}</div>
-            : patrolRoutes.filter(r => r.active).map(r => (
+            : [...remotePatrolRoutes, ...patrolRoutes.filter(r => !remotePatrolRoutes.some(x => x.id === r.id))].filter(r => r.active).map(r => (
               <div key={r.id} className="mb-2 flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-3">
                 <div>
                   <div className="font-bold text-white">{language === "ar" ? r.nameAr : r.name}</div>
@@ -2139,19 +2144,29 @@ export default function App() {
                     scheduleTime: newRouteTime || undefined, notes: newRouteNotes || undefined,
                   };
                   setPatrolRoutes(prev => [...prev, route]);
+                  // Save to Firebase
+                  (async () => {
+                    try {
+                      const { setDoc, doc } = await import("firebase/firestore");
+                      const { firestore } = await import("./services/firebase");
+                      await setDoc(doc(firestore, "patrol_routes", route.id), route);
+                    } catch { /* offline - local only */ }
+                  })();
                   setNewRouteName({ ar: "", en: "" }); setSelectedRouteBuildings([]);
                   setNewRouteGuardId(""); setNewRouteTime(""); setNewRouteNotes("");
                   setShowCreateRoute(false);
-                  showToast(language === "ar" ? "✅ تم إنشاء المسار" : "✅ Route created", "success");
+                  showToast(language === "ar" ? "✅ تم إنشاء المسار وحفظه" : "✅ Route created and saved", "success");
                 }}>{language === "ar" ? "✅ إنشاء المسار" : "✅ Create Route"}</Btn>
               </div>
             )}
 
             {/* Routes table */}
-            {patrolRoutes.length === 0
-              ? <div className="text-center py-6 text-slate-500">{language === "ar" ? "لا مسارات بعد — أضف مسارك الأول" : "No routes yet — create your first route"}</div>
-              : <div className="space-y-3">
-                  {patrolRoutes.map(r => {
+            {(() => {
+              const allRoutesTable = [...remotePatrolRoutes, ...patrolRoutes.filter(r => !remotePatrolRoutes.some(x => x.id === r.id))];
+              return allRoutesTable.length === 0
+                ? <div className="text-center py-6 text-slate-500">{language === "ar" ? "لا مسارات بعد — أضف مسارك الأول" : "No routes yet — create your first route"}</div>
+                : <div className="space-y-3">
+                  {allRoutesTable.map(r => {
                     const guard = r.assignedGuardId ? guardUsers.find(g => g.id === r.assignedGuardId) : null;
                     const isEditing = editRouteId === r.id;
                     return (
@@ -2182,7 +2197,15 @@ export default function App() {
                                 const time = (document.getElementById(`edit-time-${r.id}`) as HTMLInputElement)?.value;
                                 const notes = (document.getElementById(`edit-notes-${r.id}`) as HTMLInputElement)?.value;
                                 const guard = guardId ? guardUsers.find(g => g.id === guardId) : undefined;
-                                setPatrolRoutes(prev => prev.map(x => x.id === r.id ? { ...x, nameAr, name: nameEn, assignedGuardId: guard?.id, assignedGuardName: guard?.name, scheduleTime: time || undefined, notes: notes || undefined } : x));
+                                const updatedRoute = { ...r, nameAr, name: nameEn, assignedGuardId: guard?.id, assignedGuardName: guard?.name, scheduleTime: time || undefined, notes: notes || undefined };
+                                setPatrolRoutes(prev => prev.map(x => x.id === r.id ? updatedRoute : x));
+                                (async () => {
+                                  try {
+                                    const { setDoc, doc } = await import("firebase/firestore");
+                                    const { firestore } = await import("./services/firebase");
+                                    await setDoc(doc(firestore, "patrol_routes", r.id), updatedRoute);
+                                  } catch { }
+                                })();
                                 setEditRouteId(null);
                                 showToast(language === "ar" ? "✅ تم التحديث" : "✅ Updated", "success");
                               }}>{language === "ar" ? "💾 حفظ" : "💾 Save"}</Btn>
@@ -2214,15 +2237,23 @@ export default function App() {
                               <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => { setPatrolRoutes(prev => prev.map(x => x.id === r.id ? { ...x, active: !x.active } : x)); showToast(r.active ? (language === "ar" ? "تم إيقاف المسار" : "Route deactivated") : (language === "ar" ? "تم تفعيل المسار" : "Route activated"), "info"); }}>
                                 {r.active ? (language === "ar" ? "إيقاف" : "Disable") : (language === "ar" ? "تفعيل" : "Enable")}
                               </Btn>
-                              <Btn variant="danger" className="h-8 px-3 text-xs" onClick={() => { setPatrolRoutes(prev => prev.filter(x => x.id !== r.id)); showToast(language === "ar" ? "تم الحذف" : "Deleted", "info"); }}>🗑</Btn>
+                              <Btn variant="danger" className="h-8 px-3 text-xs" onClick={async () => {
+                              setPatrolRoutes(prev => prev.filter(x => x.id !== r.id));
+                              try {
+                                const { deleteDoc, doc } = await import("firebase/firestore");
+                                const { firestore } = await import("./services/firebase");
+                                await deleteDoc(doc(firestore, "patrol_routes", r.id));
+                              } catch { }
+                              showToast(language === "ar" ? "تم الحذف" : "Deleted", "info");
+                            }}>🗑</Btn>
                             </div>
                           </div>
                         )}
                       </div>
                     );
                   })}
-                </div>
-            }
+                </div>;
+            })()}
           </Panel>
         </>
       )}
@@ -2874,8 +2905,18 @@ export default function App() {
       recorder.ondataavailable = e => recorderChunksRef.current.push(e.data);
       recorder.onstop = async () => {
         if (!currentUser || !activeConversation) return;
-        const blob = new Blob(recorderChunksRef.current, { type: "audio/webm" });
-        const audioUrl = await fileToDataUrl(new File([blob], "voice.webm"));
+        if (recorderChunksRef.current.length === 0) {
+          showToast(language === "ar" ? "لم يتم تسجيل أي صوت" : "No audio recorded", "danger");
+          return;
+        }
+        // Use supported format
+        const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/ogg";
+        const blob = new Blob(recorderChunksRef.current, { type: mimeType });
+        if (blob.size < 100) {
+          showToast(language === "ar" ? "التسجيل فارغ — حاول مرة أخرى" : "Recording empty — try again", "danger");
+          return;
+        }
+        const audioUrl = await fileToDataUrl(new File([blob], `voice.${mimeType.split("/")[1]}`));
         const msg: ChatMessage = { id: `msg-${Date.now()}`, senderId: currentUser.id, kind: "audio", audioUrl, time: chatTime(language) };
         mutate(prev => {
           const srcConv = conversationsSource.find(c => c.id === activeConversation.id);
@@ -2888,7 +2929,7 @@ export default function App() {
         });
         stream.getTracks().forEach(t => t.stop());
       };
-      recorder.start();
+      recorder.start(100); // collect data every 100ms
       setIsRecording(true);
     } catch { showToast(language === "ar" ? "تعذر الوصول للميكروفون" : "Microphone denied", "danger"); }
   };
