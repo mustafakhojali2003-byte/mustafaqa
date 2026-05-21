@@ -522,15 +522,13 @@ export default function App() {
   }, [mergedShifts, shiftFilter, isGuard, currentUser]);
   const myShift = useMemo(() => isGuard && currentUser ? mergedShifts.find(s => s.guardId === currentUser.id && s.date === today()) : null, [currentUser, isGuard, mergedShifts]);
   const hasActiveEmergency = useMemo(() => {
-    // Only FIRE alerts + SOS trigger emergency state
-    const hasActiveFireAlert = mergedAlerts.some(a =>
-      a.severity === "critical" &&
-      (a.status.includes("🔥") || a.status.includes("Fire") || a.status.includes("حريق")) &&
+    // ANY alert that is not stopped triggers emergency state
+    const hasActiveAlert = mergedAlerts.some(a =>
       !(a as AlertLog & { stopped?: boolean }).stopped &&
       !stoppedAlertIds.has(a.id)
     );
     const hasActiveSOS = mergedSOSEvents.some(s => !s.resolved);
-    return hasActiveFireAlert || hasActiveSOS;
+    return hasActiveAlert || hasActiveSOS;
   }, [mergedAlerts, mergedSOSEvents, stoppedAlertIds]);
 
   const insights = useMemo(() => analyzeData(mergedReports, mergedShifts, mergedViolations, mergedSOSEvents, mergedAttendance, snapshot.buildings), [mergedReports, mergedShifts, mergedViolations, mergedSOSEvents, mergedAttendance, snapshot.buildings]);
@@ -770,18 +768,11 @@ export default function App() {
       const isCritical = latest.severity === "critical";
       const isWarn = latest.severity === "warning";
       // Fire = siren. Flood/Other = normal sound only
-      const isFireAlert = isCritical &&
-        (latest.status.includes("🔥") || latest.status.includes("Fire") || latest.status.includes("حريق"));
-      // Don't re-trigger if THIS user sent it (they already triggered sound)
+      // ALL alerts trigger siren - any alert is an emergency
       if (latest.sender !== currentUser.name) {
-        if (isFireAlert) {
-          startEmergencySound();
-          setEmergencyActive(true);
-          vibrateEmergency();
-        } else {
-          playNormalAlertSound(currentUser.soundEnabled);
-          vibrateDevice();
-        }
+        startEmergencySound();
+        setEmergencyActive(true);
+        vibrateEmergency();
       }
       // Push notification for everyone
       sendToServiceWorker({
@@ -1321,8 +1312,6 @@ export default function App() {
     const next24hVisitors = mergedVisitors.filter(v => v.arrivalDate === todayStr && v.status === "scheduled");
     const onlineGuards = guardUsers.filter(u => activeUserIds.includes(u.id));
     const hasEmergency = mergedAlerts.some(a =>
-      a.severity === "critical" &&
-      (a.status.includes("🔥") || a.status.includes("Fire") || a.status.includes("حريق")) &&
       !(a as AlertLog & { stopped?: boolean }).stopped &&
       !stoppedAlertIds.has(a.id)
     ) || mergedSOSEvents.some(s => !s.resolved);
@@ -3175,7 +3164,7 @@ export default function App() {
       </Panel>
 
       {/* Active critical banner + master stop */}
-      {(emergencyActive || mergedAlerts.some(a => a.severity === "critical" && (a.status.includes("🔥") || a.status.includes("Fire") || a.status.includes("حريق")) && !(a as AlertLog & { stopped?: boolean }).stopped && !stoppedAlertIds.has(a.id))) && (
+      {(emergencyActive || mergedAlerts.some(a => !(a as AlertLog & { stopped?: boolean }).stopped && !stoppedAlertIds.has(a.id))) && (
         <div className="rounded-2xl border border-red-500/50 bg-red-600/20 p-4 flex flex-wrap items-center gap-3">
           <span className="text-3xl animate-pulse">🚨</span>
           <div className="flex-1">
@@ -3239,7 +3228,7 @@ export default function App() {
                       {stoppedAlertIds.has(a.id) ? (language === "ar" ? "🔇 موقوف" : "🔇 Stopped") : isCrit ? (language === "ar" ? "حرج 🔥" : "Critical 🔥") : isWarn ? (language === "ar" ? "تحذير" : "Warning") : (language === "ar" ? "معلومة" : "Info")}
                     </Badge>
                     {/* Stop button: sender can stop their own, owner can stop any */}
-                    {(isCrit || emergencyActive) && !stoppedAlertIds.has(a.id) && (isOwner || a.sender === currentUser?.name) && (
+                    {!stoppedAlertIds.has(a.id) && !(a as AlertLog & { stopped?: boolean }).stopped && (isOwner || a.sender === currentUser?.name) && (
                       <Btn variant="secondary" className="h-7 px-3 text-xs" onClick={() => {
                         setStoppedAlertIds(prev => new Set([...prev, a.id]));
                         if (emergencyActive) { stopEmergencySound(); setEmergencyActive(false); }
