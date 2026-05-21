@@ -875,7 +875,11 @@ export default function App() {
     setAuthError(null); setAuthInfo(null);
     const emailCheck = validateEmail(payload.email);
     if (!emailCheck.valid) return setAuthError(language === "ar" ? (emailCheck.errorAr ?? "بريد غير صحيح") : (emailCheck.errorEn ?? "Invalid email"));
-    const allUsers = [...snapshot.users, ...(remotePendingUsers ?? [])];
+    const allUsers = [
+      ...snapshot.users,
+      ...(remotePendingUsers ?? []),
+      ...(remoteApprovedUsers ?? []),
+    ].filter((u, i, arr) => arr.findIndex(x => x.id === u.id) === i); // dedupe
     const emailExists = allUsers.some(u =>
       u.email.toLowerCase() === payload.email.trim().toLowerCase() &&
       !deletedUserIds.has(u.id)
@@ -885,7 +889,9 @@ export default function App() {
     if (emailCheck.suggestion) setAuthInfo(emailCheck.suggestion);
     const newUser: User = {
       id: `user-${Date.now()}`, name: payload.name.trim(), email: payload.email.trim(),
-      phone: payload.role === "admin" ? "" : payload.phone.trim(), role: payload.role, status: "pending",
+      phone: payload.role === "admin" ? "" : payload.phone.trim(),
+      securityNumber: payload.securityNumber?.trim() || undefined,
+      role: payload.role, status: "pending",
       assignedBuildingId: payload.role === "admin" ? undefined : payload.buildingId,
       permissions: payload.role === "admin" ? ["reports", "attendance", "buildings", "viewReports", "chat", "visitors", "shifts"] : ["reports", "attendance", "chat", "buildings", "visitors", "sos"],
       rating: 4, passwordHash: hashPassword(payload.password), soundEnabled: true, desktopNotificationsEnabled: false, showFullToAdmin: false, createdAt: nowStamp(), violations: 0,
@@ -894,7 +900,7 @@ export default function App() {
     try {
       await savePendingUser(newUser);
       mutate(prev => ({ ...prev, users: [newUser, ...prev.users], auditLog: [createAuditEntry(null, "account_request", newUser.email, "طلب حساب جديد", "warning"), ...prev.auditLog] }));
-      setAuthInfo(language === "ar" ? "تم إرسال الطلب وهو بانتظار موافقة المالك" : "Request submitted — pending owner approval");
+      setAuthInfo(language === "ar" ? "✅ تم إرسال الطلب وهو بانتظار موافقة المالك — ستتلقى إشعاراً عند الموافقة" : "✅ Request submitted — pending owner approval. You will be notified when approved");
       // Request notification permission after registration
       if ("Notification" in window && Notification.permission === "default") {
         Notification.requestPermission().catch(() => undefined);

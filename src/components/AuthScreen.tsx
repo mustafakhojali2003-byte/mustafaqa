@@ -193,7 +193,7 @@ export default function AuthScreen({
                           <input value={createForm.phone} onChange={(event) => setCreateForm((previous) => ({ ...previous, phone: event.target.value }))} className="h-12 w-full rounded-2xl border border-white/10 bg-[#070d22] px-4 text-white outline-none" required />
                         </div>
                         <div>
-                          <Lbl>{language === "ar" ? "الرقم الوظيفي / رقم السكيورتي" : "Security / Employee ID"}</Lbl>
+                          <label className="mb-1 block text-xs font-bold text-slate-400">{language === "ar" ? "الرقم الوظيفي / رقم السكيورتي" : "Security / Employee ID"}</label>
                           <input
                             value={createForm.securityNumber ?? ""}
                             onChange={(event) => setCreateForm((previous) => ({ ...previous, securityNumber: event.target.value }))}
