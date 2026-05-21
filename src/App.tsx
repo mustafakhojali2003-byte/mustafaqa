@@ -1113,14 +1113,19 @@ export default function App() {
     }));
     setDeletedUserIds(prev => new Set([...prev, userId]));
 // Account deleted - not blocked (can re-register)
-    // Also delete their FCM tokens so they stop receiving notifications
+    // Delete FCM tokens + write forced logout marker
     try {
-      const { deleteDoc, doc, collection, getDocs, query, where } = await import("firebase/firestore");
+      const { deleteDoc, setDoc, doc, collection, getDocs, query, where } = await import("firebase/firestore");
       const { firestore } = await import("./services/firebase");
+      // Delete FCM tokens
       const tokSnap = await getDocs(query(collection(firestore, "fcm_tokens"), where("userId", "==", userId)));
       tokSnap.forEach(d => deleteDoc(d.ref));
+      // Write forced logout - device checks this on every render
+      await setDoc(doc(firestore, "forced_logouts", userId), {
+        userId, deletedAt: nowStamp(), deletedBy: currentUser?.name ?? "owner"
+      });
     } catch { /* ignore */ }
-    showToast(language === "ar" ? "✅ تم حذف المستخدم نهائياً" : "✅ User permanently deleted", "success");
+    showToast(language === "ar" ? "✅ تم حذف المستخدم وسيتم تسجيل خروجه فوراً" : "✅ User deleted — will be logged out immediately", "success");
   };
 
   const blockUser = async (userId: string, userName: string) => {
