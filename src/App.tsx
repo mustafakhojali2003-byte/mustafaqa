@@ -529,14 +529,14 @@ export default function App() {
   }, [mergedShifts, shiftFilter, isGuard, currentUser]);
   const myShift = useMemo(() => isGuard && currentUser ? mergedShifts.find(s => s.guardId === currentUser.id && s.date === today()) : null, [currentUser, isGuard, mergedShifts]);
   const hasActiveEmergency = useMemo(() => {
-    // ANY alert that is not stopped triggers emergency state
-    const hasActiveAlert = mergedAlerts.some(a =>
+    // Only active (emergencyActive flag set) AND not stopped alerts
+    const hasActiveAlert = emergencyActive && mergedAlerts.some(a =>
       !(a as AlertLog & { stopped?: boolean }).stopped &&
       !stoppedAlertIds.has(a.id)
     );
     const hasActiveSOS = mergedSOSEvents.some(s => !s.resolved);
     return hasActiveAlert || hasActiveSOS;
-  }, [mergedAlerts, mergedSOSEvents, stoppedAlertIds]);
+  }, [mergedAlerts, mergedSOSEvents, emergencyActive, stoppedAlertIds]);
 
   const insights = useMemo(() => analyzeData(mergedReports, mergedShifts, mergedViolations, mergedSOSEvents, mergedAttendance, snapshot.buildings), [mergedReports, mergedShifts, mergedViolations, mergedSOSEvents, mergedAttendance, snapshot.buildings]);
 
@@ -677,10 +677,10 @@ export default function App() {
           return next;
         });
         // Stop siren if all critical alerts are stopped in Firebase
-        const allCritStopped = remoteAlerts
-          .filter(a => a.severity === "critical")
-          .every(a => (a as AlertLog & { stopped?: boolean }).stopped === true);
-        if (allCritStopped) {
+        const allActiveStopped = remoteAlerts
+          .filter(a => !(a as AlertLog & { stopped?: boolean }).stopped)
+          .length === 0;
+        if (allActiveStopped || remoteStoppedIds.length > 0) {
           stopEmergencySound();
           setEmergencyActive(false);
         }
@@ -1318,10 +1318,13 @@ export default function App() {
     const todayReports = mergedReports.filter(r => r.time.startsWith(todayStr));
     const next24hVisitors = mergedVisitors.filter(v => v.arrivalDate === todayStr && v.status === "scheduled");
     const onlineGuards = guardUsers.filter(u => activeUserIds.includes(u.id));
-    const hasEmergency = mergedAlerts.some(a =>
+    // Emergency only if: alert within last 24h AND not stopped
+    const now24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 16).replace("T", " ");
+    const hasEmergency = (emergencyActive && mergedAlerts.some(a =>
       !(a as AlertLog & { stopped?: boolean }).stopped &&
-      !stoppedAlertIds.has(a.id)
-    ) || mergedSOSEvents.some(s => !s.resolved);
+      !stoppedAlertIds.has(a.id) &&
+      a.time >= now24h
+    )) || mergedSOSEvents.some(s => !s.resolved);
 
     // Guard-specific simplified dashboard
     if (isGuard && currentUser) {
@@ -1404,7 +1407,7 @@ export default function App() {
             <span className="text-3xl">🚨</span>
             <div className="flex-1">
               <div className="font-black text-red-200 text-lg">{language === "ar" ? "وضع الطوارئ نشط" : "Emergency Mode Active"}</div>
-              <div className="text-sm text-red-300">{language === "ar" ? "صفارة الإنذار تعمل — تحقق من لوحة SOS فوراً" : "Siren is active — check SOS panel immediately"}</div>
+              <div className="text-sm text-red-300">{language === "ar" ? "صفارة الإنذار تعمل — تحقق من التنبيهات فوراً" : "Siren is active — check Alerts immediately"}</div>
             </div>
             {emergencyActive && (
               <Btn variant="danger" onClick={() => { stopEmergencySound(); setEmergencyActive(false); }}>🔇 {language === "ar" ? "إيقاف الصفارة" : "Stop Siren"}</Btn>
@@ -3171,7 +3174,7 @@ export default function App() {
       </Panel>
 
       {/* Active critical banner + master stop */}
-      {(emergencyActive || mergedAlerts.some(a => !(a as AlertLog & { stopped?: boolean }).stopped && !stoppedAlertIds.has(a.id))) && (
+      {hasActiveEmergency && (
         <div className="rounded-2xl border border-red-500/50 bg-red-600/20 p-4 flex flex-wrap items-center gap-3">
           <span className="text-3xl animate-pulse">🚨</span>
           <div className="flex-1">
