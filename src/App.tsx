@@ -326,6 +326,7 @@ export default function App() {
   const [newRouteNotes, setNewRouteNotes] = useState("");
   const [qrModalBuilding, setQrModalBuilding] = useState<string | null>(null);
   const [stoppedAlertIds, setStoppedAlertIds] = useState<Set<string>>(new Set());
+  const [deletedUserIds, setDeletedUserIds] = useState<Set<string>>(new Set());
   const [editReportId, setEditReportId] = useState<string | null>(null);
   const [editReportForm, setEditReportForm] = useState({ text: "", status: "normal" as ReportStatus });
   const [commentingReportId, setCommentingReportId] = useState<string | null>(null);
@@ -386,7 +387,8 @@ export default function App() {
     const map = new Map<string, User>();
     snapshot.users.filter(u => u.status === "approved").forEach(u => map.set(u.id, u));
     remoteApprovedUsers.forEach(u => map.set(u.id, u));
-    return Array.from(map.values());
+    // Filter out users that were deleted this session
+    return Array.from(map.values()).filter(u => !deletedUserIds.has(u.id));
   }, [remoteApprovedUsers, snapshot.users]);
 
   const pendingUsers = useMemo(() => {
@@ -858,7 +860,11 @@ export default function App() {
     const emailCheck = validateEmail(payload.email);
     if (!emailCheck.valid) return setAuthError(language === "ar" ? (emailCheck.errorAr ?? "بريد غير صحيح") : (emailCheck.errorEn ?? "Invalid email"));
     const allUsers = [...snapshot.users, ...(remotePendingUsers ?? [])];
-    if (allUsers.some(u => u.email.toLowerCase() === payload.email.trim().toLowerCase()))
+    const emailExists = allUsers.some(u =>
+      u.email.toLowerCase() === payload.email.trim().toLowerCase() &&
+      !deletedUserIds.has(u.id)
+    );
+    if (emailExists)
       return setAuthError(language === "ar" ? "البريد مستخدم بالفعل" : "Email already registered");
     if (emailCheck.suggestion) setAuthInfo(emailCheck.suggestion);
     const newUser: User = {
@@ -1068,10 +1074,19 @@ export default function App() {
     void deletePendingUserRemote(userId);
   };
 
-  const deleteUser = (userId: string) => {
+  const deleteUser = async (userId: string) => {
     if (!currentUser || userId === currentUser.id) return;
-    mutate(prev => ({ ...prev, users: prev.users.filter(u => u.id !== userId), auditLog: [createAuditEntry(currentUser, "delete_user", userId, "تم حذف المستخدم", "warning"), ...prev.auditLog] }), language === "ar" ? "تم حذف المستخدم" : "Deleted");
-    void deleteApprovedUserRemote(userId);
+    // Delete from Firebase FIRST, then update local state
+    await deleteApprovedUserRemote(userId);
+    await deletePendingUserRemote(userId);
+    mutate(prev => ({
+      ...prev,
+      users: prev.users.filter(u => u.id !== userId),
+      auditLog: [createAuditEntry(currentUser, "delete_user", userId, "تم حذف المستخدم", "warning"), ...prev.auditLog],
+    }));
+    // Also clear from remoteApprovedUsers by forcing a refresh
+    setDeletedUserIds(prev => new Set([...prev, userId]));
+    showToast(language === "ar" ? "✅ تم حذف المستخدم نهائياً" : "✅ User permanently deleted", "success");
   };
 
   const requestDesktopNotification = async () => {
