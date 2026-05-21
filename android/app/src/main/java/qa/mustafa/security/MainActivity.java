@@ -4,6 +4,9 @@ import android.Manifest;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.webkit.PermissionRequest;
+import android.webkit.WebChromeClient;
+import android.webkit.WebView;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import com.getcapacitor.BridgeActivity;
@@ -18,6 +21,18 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         requestAllPermissions();
+        setupWebViewPermissions();
+    }
+
+    // Allow WebView (browser inside app) to use camera and microphone
+    private void setupWebViewPermissions() {
+        WebView webView = getBridge().getWebView();
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(final PermissionRequest request) {
+                runOnUiThread(() -> request.grant(request.getResources()));
+            }
+        });
     }
 
     private void requestAllPermissions() {
