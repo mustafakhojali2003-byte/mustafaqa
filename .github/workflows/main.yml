@@ -1,37 +1,46 @@
 name: Build QGuard APK
+
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
+
       - run: npm ci
       - run: npm run build
+
       - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
+
       - uses: android-actions/setup-android@v3
-      - run: npm install -g @capacitor/cli
+
       - run: npx cap sync android
       - run: chmod +x android/gradlew
       - run: cd android && ./gradlew assembleDebug --no-daemon
+
       - uses: actions/upload-artifact@v4
         with:
           name: QGuard-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ github.run_number }}
-          name: QGuard v${{ github.run_number }}
+          tag_name: build-${{ github.run_number }}
+          name: "QGuard Build ${{ github.run_number }}"
+          body: "APK جاهز للتحميل"
           files: android/app/build/outputs/apk/debug/app-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
