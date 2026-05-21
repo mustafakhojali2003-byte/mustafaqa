@@ -25,6 +25,7 @@ export default function AuthScreen({
   const [showPassword, setShowPassword] = useState(false);
   const [showCreatePassword, setShowCreatePassword] = useState(false);
   const [signInForm, setSignInForm] = useState({ email: "", password: "" });
+  const [localError, setLocalError] = useState<string | null>(null);
   const [createForm, setCreateForm] = useState<NewAccountPayload & { confirmPassword: string }>({
     name: "",
     email: "",
@@ -42,7 +43,12 @@ export default function AuthScreen({
 
   const submitCreateAccount = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (createForm.password !== createForm.confirmPassword) return;
+    setLocalError(null);
+    if (!createForm.name.trim()) return setLocalError(language === "ar" ? "يرجى إدخال الاسم" : "Please enter your name");
+    if (!createForm.email.trim()) return setLocalError(language === "ar" ? "يرجى إدخال البريد الإلكتروني" : "Please enter your email");
+    if (createForm.password.length < 6) return setLocalError(language === "ar" ? "كلمة السر يجب أن تكون 6 أحرف على الأقل" : "Password must be at least 6 characters");
+    if (createForm.password !== createForm.confirmPassword) return setLocalError(language === "ar" ? "كلمتا السر غير متطابقتين" : "Passwords do not match");
+    if (createForm.role === "guard" && !createForm.phone.trim()) return setLocalError(language === "ar" ? "يرجى إدخال رقم الهاتف" : "Please enter your phone number");
     const { confirmPassword, ...payload } = createForm;
     void confirmPassword;
     await onCreateAccount(payload);
