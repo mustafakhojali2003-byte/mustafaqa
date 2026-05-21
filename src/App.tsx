@@ -43,7 +43,6 @@ const tabLabels: Partial<Record<Tab, Pair>> = {
   audit: { ar: "سجل التدقيق", en: "Audit" },
   system: { ar: "إعدادات النظام", en: "System" },
   settings: { ar: "الإعدادات", en: "Settings" },
-  shifts: { ar: "النوبات", en: "Shifts" },
   violations: { ar: "المخالفات", en: "Violations" },
   map: { ar: "الخريطة", en: "Map" },
   sos: { ar: "طوارئ 🚨", en: "SOS 🚨" },
@@ -65,7 +64,6 @@ const permissionLabels: Record<string, Pair> = {
   buildings: { ar: "الوصول للمباني", en: "Access Buildings" },
   viewReports: { ar: "عرض التقارير", en: "View Reports" },
   visitors: { ar: "إدارة الزوار", en: "Manage Visitors" },
-  shifts: { ar: "النوبات", en: "Shifts" },
   violations: { ar: "المخالفات", en: "Violations" },
   sos: { ar: "SOS", en: "SOS" },
 };
@@ -193,7 +191,7 @@ function buildSeedState(): AppSnapshot {
     { id: "s2", guardId: "guard-2", guardName: "Ayman Saeed", buildingId: "gate-2", date: todayStr, startTime: "07:00", endTime: "19:00", status: "active", checkInTime: "07:10", createdAt: nowStamp() },
   ];
   const violations: Violation[] = [
-    { id: "v1", guardId: "guard-2", guardName: "Ayman Saeed", type: "Late Arrival", description: "Guard arrived 30 minutes late without notice.", severity: "minor", buildingId: "gate-2", issuedBy: "Mustafa Khojali", issuedAt: "2026-05-06 08:35", acknowledged: false },
+    { id: "v1", guardId: "guard-2", guardName: "Ayman Saeed", type: "Late Arrival", description: "Guard arrived 30 minutes late without notice.", severity: "minor", buildingId: "gate-2", date: "2026-05-06", acknowledged: false, createdBy: "Mustafa Khojali", createdAt: "2026-05-06 08:35" },
   ];
   const sosEvents: SOSEvent[] = [];
 
@@ -1736,7 +1734,7 @@ export default function App() {
         {(isOwner || isAdmin) && (
           <Panel>
             <div className="mb-4 font-black text-white">+ {language === "ar" ? "إضافة نوبة" : "Add Shift"}</div>
-            <form onSubmit={addShift} className="space-y-4">
+            <form onSubmit={e => { e.preventDefault(); }} className="space-y-4">
               {/* Shift type */}
               <div>
                 <Lbl>{language === "ar" ? "نوع الشفت" : "Shift Type"}</Lbl>
@@ -2172,7 +2170,19 @@ export default function App() {
     </div>
   );
 
-    const renderAnalytics = () => (
+    const renderMap = () => (
+    <div className="space-y-4">
+      <SectionHead title={language === "ar" ? "الخريطة" : "Map"} />
+      <Panel>
+        <div className="overflow-hidden rounded-2xl" style={{ height: 420 }}>
+          <iframe title="map" width="100%" height="100%" style={{ border: 0 }}
+            src="https://www.openstreetmap.org/export/embed.html?bbox=51.48%2C25.25%2C51.56%2C25.32&layer=mapnik&marker=25.2854%2C51.5310" />
+        </div>
+      </Panel>
+    </div>
+  );
+
+  const renderAnalytics = () => (
     <div className="space-y-6">
       <SectionHead title={language === "ar" ? "التحليلات الذكية" : "Smart Analytics"} />
       <Panel>

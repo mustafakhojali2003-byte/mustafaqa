@@ -86,8 +86,8 @@ export interface Shift {
 export interface Violation {
   id: string; guardId: string; guardName: string; type: string;
   description: string; severity: "minor" | "major" | "critical";
-  buildingId?: string; issuedBy: string; issuedAt: string;
-  acknowledged?: boolean; acknowledgedAt?: string; penalty?: string;
+  buildingId: string; date: string; acknowledged: boolean;
+  createdBy: string; createdAt: string; issuedBy?: string; issuedAt?: string;
 }
 
 export interface SOSEvent {
