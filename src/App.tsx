@@ -3160,6 +3160,8 @@ export default function App() {
       target: targetLabel,
       text: alertForm.text.trim(),
       sender: currentUser.name,
+      senderId: currentUser.id,
+      senderRole: currentUser.role,
       time: nowStamp(),
       severity: typeInfo.severity,
     };
@@ -3321,7 +3323,10 @@ export default function App() {
                       <div className="font-black text-white">{a.status}</div>
                       <p className="mt-1 text-sm text-slate-300">{a.text}</p>
                       <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
-                        {!(isGuard && approvedUsers.some(u => u.name === a.sender && u.role === "guard")) && (<span>👤 {a.sender}</span>)}
+                        {/* Only show sender if: viewer is not a guard, OR sender is not a guard */}
+                        {(!isGuard || (a as AlertLog & { senderRole?: string }).senderRole !== "guard") && (
+                          <span>👤 {a.sender}</span>
+                        )}
                         <span>🕐 {formatTime(a.time, use24h)}</span>
                         <span>📍 {a.target}</span>
                       </div>
