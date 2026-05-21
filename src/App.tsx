@@ -789,6 +789,20 @@ export default function App() {
     prevAlertCount.current = mergedAlerts.length;
   }, [currentUser, mergedAlerts]);
 
+  // ─── Auto-logout if current user deleted from Firebase ──────────────────────
+  useEffect(() => {
+    if (!currentUser) return;
+    // If current user disappears from approved users list → force logout
+    const stillExists = approvedUsers.some(u => u.id === currentUser.id) ||
+      currentUser.email === OWNER_EMAIL; // owner is never deleted
+    if (!stillExists && !deletedUserIds.has(currentUser.id)) {
+      // User was deleted by owner from another device
+      setCurrentUser(null);
+      setSnapshot(defaultSnapshot());
+      showToast(language === "ar" ? "⚠️ تم حذف حسابك من قِبل المالك" : "⚠️ Your account was deleted by the owner", "danger");
+    }
+  }, [approvedUsers, currentUser]);
+
   // ─── Auto-stop siren if no active critical alerts ────────────────────────────
   useEffect(() => {
     if (emergencyActive && !hasActiveEmergency) {
@@ -932,6 +946,9 @@ export default function App() {
   // Reports
   const submitReport = async (e: FormEvent) => {
     e.preventDefault();
+    if (!currentUser || !approvedUsers.some(u => u.id === currentUser.id) && currentUser.email !== OWNER_EMAIL) {
+      setAuthError(language === "ar" ? "حسابك غير نشط" : "Account inactive"); setCurrentUser(null); return;
+    }
     if (!currentUser || !reportForm.text.trim()) return;
     // Use QR-scanned building if available, else form selection
     const buildingId = reportScannedBuilding || reportForm.buildingId;
@@ -1074,17 +1091,24 @@ export default function App() {
 
   const deleteUser = async (userId: string) => {
     if (!currentUser || userId === currentUser.id) return;
-    // Delete from Firebase FIRST, then update local state
+    // Delete from Firebase FIRST
     await deleteApprovedUserRemote(userId);
     await deletePendingUserRemote(userId);
+    // Update local state immediately
     mutate(prev => ({
       ...prev,
       users: prev.users.filter(u => u.id !== userId),
       auditLog: [createAuditEntry(currentUser, "delete_user", userId, "تم حذف المستخدم", "warning"), ...prev.auditLog],
     }));
-    // Also clear from remoteApprovedUsers by forcing a refresh
     setDeletedUserIds(prev => new Set([...prev, userId]));
-    showToast(language === "ar" ? "✅ تم حذف المستخدم نهائياً" : "✅ User permanently deleted", "success");
+    // Also delete their FCM tokens so they stop receiving notifications
+    try {
+      const { deleteDoc, doc, collection, getDocs, query, where } = await import("firebase/firestore");
+      const { firestore } = await import("./services/firebase");
+      const tokSnap = await getDocs(query(collection(firestore, "fcm_tokens"), where("userId", "==", userId)));
+      tokSnap.forEach(d => deleteDoc(d.ref));
+    } catch { /* ignore */ }
+    showToast(language === "ar" ? "✅ تم حذف المستخدم وإيقاف وصوله فوراً" : "✅ User deleted and access revoked", "success");
   };
 
   const requestDesktopNotification = async () => {
