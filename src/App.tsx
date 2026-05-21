@@ -335,18 +335,14 @@ export default function App() {
   const [pendingUserId, setPendingUserId] = useState<string | null>(() => window.localStorage.getItem("mustafaqa-pending-id") || null);
   const [loginAttempts, setLoginAttempts] = useState<number>(0);
 
-  // Unlock AudioContext on first user interaction (required by browser policy)
+  // Unlock AudioContext + request permissions on first interaction
   useEffect(() => {
-    const unlock = () => {
+    const unlock = async () => {
+      // Unlock audio
       try {
         const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-        if (AudioCtx) {
-          const ctx = new AudioCtx();
-          ctx.resume().then(() => ctx.close());
-        }
+        if (AudioCtx) { const ctx = new AudioCtx(); ctx.resume().then(() => ctx.close()); }
       } catch { /* ignore */ }
-      document.removeEventListener("touchstart", unlock);
-      document.removeEventListener("click", unlock);
     };
     document.addEventListener("touchstart", unlock, { once: true });
     document.addEventListener("click", unlock, { once: true });
@@ -354,6 +350,30 @@ export default function App() {
       document.removeEventListener("touchstart", unlock);
       document.removeEventListener("click", unlock);
     };
+  }, []);
+
+  // Request permissions immediately when app loads (web + APK)
+  useEffect(() => {
+    const askPermissions = async () => {
+      // Ask notifications
+      if ("Notification" in window && Notification.permission === "default") {
+        try { await Notification.requestPermission(); } catch { /* ignore */ }
+      }
+      // Ask camera + mic together (single dialog)
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        stream.getTracks().forEach(t => t.stop());
+      } catch {
+        // Try mic only
+        try {
+          const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+          s.getTracks().forEach(t => t.stop());
+        } catch { /* ignore */ }
+      }
+    };
+    // Ask after 2 seconds on any page load
+    const timer = setTimeout(() => { void askPermissions(); }, 2000);
+    return () => clearTimeout(timer);
   }, []);
   const [loginLockedUntil, setLoginLockedUntil] = useState<number>(0);
   const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
