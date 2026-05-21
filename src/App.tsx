@@ -2924,15 +2924,20 @@ export default function App() {
 
   const startVoiceRecord = async () => {
     try {
-      // Check microphone permission explicitly
+      // Check if microphone is blocked
       if (navigator.permissions) {
         try {
           const perm = await navigator.permissions.query({ name: "microphone" as PermissionName });
           if (perm.state === "denied") {
-            showToast(language === "ar" ? "🎙️ الميكروفون محجوب — افتح إعدادات المتصفح وأذن بالوصول" : "🎙️ Microphone blocked — enable it in browser settings", "danger");
+            showToast(
+              language === "ar"
+                ? "🎙️ الميكروفون محجوب — اضغط على أيقونة القفل 🔒 في شريط العنوان وأذن بالوصول"
+                : "🎙️ Mic blocked — tap the lock 🔒 in address bar to allow access",
+              "danger"
+            );
             return;
           }
-        } catch { /* ignore - not all browsers support permissions API */ }
+        } catch { /* ignore */ }
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
