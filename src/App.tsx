@@ -796,12 +796,10 @@ export default function App() {
       const isCritical = latest.severity === "critical";
       const isWarn = latest.severity === "warning";
       // Fire = siren. Flood/Other = normal sound only
-      // ALL alerts trigger siren - any alert is an emergency
-      if (latest.sender !== currentUser.name) {
-        void startEmergencySound();
-        setEmergencyActive(true);
-        vibrateEmergency();
-      }
+      // ALL alerts trigger siren for EVERYONE including sender
+      void startEmergencySound();
+      setEmergencyActive(true);
+      vibrateEmergency();
       // Push notification for everyone
       sendToServiceWorker({
         title: `${isCritical ? "🚨" : isWarn ? "⚠️" : "📢"} ${latest.status}`,
@@ -3205,8 +3203,9 @@ export default function App() {
     void saveAlert(alert);
     mutate(prev => ({ ...prev, alerts: [alert, ...prev.alerts] }));
     // Siren + vibration + push notification
+    // Play siren immediately for the sender too
+    void startEmergencySound();
     if (isCritical) {
-      void startEmergencySound();
       setEmergencyActive(true);
       vibrateEmergency();
     } else {

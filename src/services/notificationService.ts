@@ -72,7 +72,8 @@ function getAudioContext(): AudioContext | null {
     (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioContextCtor) return null;
   try {
-    return new AudioContextCtor();
+    sharedCtx = new AudioContextCtor();
+    return sharedCtx;
   } catch {
     return null;
   }
@@ -152,9 +153,16 @@ export async function startEmergencySound() {
   if (!ctx) return;
   // Resume AudioContext if suspended (browser autoplay policy)
   if (ctx.state === "suspended") {
-    try { await ctx.resume(); } catch { return; }
+    try { await ctx.resume(); } catch (e) { console.warn("Audio resume failed:", e); }
   }
-  if (ctx.state !== "running") return;
+  // Try again after a short delay if still not running
+  if (ctx.state !== "running") {
+    await new Promise(r => setTimeout(r, 100));
+    if (ctx.state !== "running") {
+      console.warn("AudioContext state:", ctx.state);
+      return;
+    }
+  }
   emergencyContext = ctx;
   emergencyRunning = true;
   playEmergencyLoop(ctx);
