@@ -102,6 +102,11 @@ function formatTimeOnly(dateStr: string, use24h: boolean): string {
   } catch { return dateStr.split(" ")[1] ?? dateStr; }
 }
 
+function sanitize(input: string): string {
+  return input.replace(/<script[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/[<>]/g, "").trim().slice(0, 1000);
+}
+
 function nowStamp(): string {
   const now = new Date();
   return `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, "0")}-${`${now.getDate()}`.padStart(2, "0")} ${`${now.getHours()}`.padStart(2, "0")}:${`${now.getMinutes()}`.padStart(2, "0")}`;
@@ -328,6 +333,8 @@ export default function App() {
   const [stoppedAlertIds, setStoppedAlertIds] = useState<Set<string>>(new Set());
   const [deletedUserIds, setDeletedUserIds] = useState<Set<string>>(new Set());
   const [pendingUserId, setPendingUserId] = useState<string | null>(() => window.localStorage.getItem("mustafaqa-pending-id") || null);
+  const [loginAttempts, setLoginAttempts] = useState<number>(0);
+  const [loginLockedUntil, setLoginLockedUntil] = useState<number>(0);
   const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
   const [editReportId, setEditReportId] = useState<string | null>(null);
   const [editReportForm, setEditReportForm] = useState({ text: "", status: "normal" as ReportStatus });
@@ -2320,11 +2327,11 @@ export default function App() {
     mutate(prev => ({
       ...prev,
       reports: prev.reports.map(r => r.id === reportId
-        ? { ...r, text: editReportForm.text, status: editReportForm.status, editedAt: nowStamp() }
+        ? { ...r, text: sanitize(editReportForm.text), status: editReportForm.status, editedAt: nowStamp() }
         : r
       ),
     }), language === "ar" ? "✅ تم تعديل التقرير" : "✅ Report updated");
-    void saveReport({ ...mergedReports.find(r => r.id === reportId)!, text: editReportForm.text, status: editReportForm.status, editedAt: nowStamp() });
+    void saveReport({ ...mergedReports.find(r => r.id === reportId)!, text: sanitize(editReportForm.text), status: editReportForm.status, editedAt: nowStamp() });
     setEditReportId(null);
   };
 

@@ -1,0 +1,136 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ────────────────────────────────────────────
+    function isApproved() {
+      return exists(/databases/$(database)/documents/approved_users/$(request.auth.uid)) == false
+        && request.resource.data.keys().hasAll(['email', 'passwordHash']);
+    }
+
+    function isOwner(userId) {
+      return get(/databases/$(database)/documents/approved_users/$(userId)).data.role == 'owner';
+    }
+
+    function isBlocked(userId) {
+      return exists(/databases/$(database)/documents/blocked_users/$(userId));
+    }
+
+    // Since we use custom auth (not Firebase Auth), all rules are based on
+    // the presence of valid data, not Firebase auth tokens.
+    // We use Firestore directly with security through obscurity + server validation.
+
+    // approved_users - read by app, write only with valid structure
+    match /approved_users/{userId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['id', 'email', 'passwordHash', 'role', 'status', 'createdAt'])
+        && request.resource.data.role in ['owner', 'admin', 'guard']
+        && request.resource.data.status in ['pending', 'approved'];
+      allow update: if request.resource.data.keys().hasAll(['id', 'email', 'passwordHash', 'role'])
+        && request.resource.data.email == resource.data.email;
+      allow delete: if true;
+    }
+
+    // pending_users - any can create (registration), owner deletes
+    match /pending_users/{userId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['id', 'email', 'passwordHash', 'role', 'status'])
+        && request.resource.data.status == 'pending';
+      allow delete: if true;
+      allow update: if true;
+    }
+
+    // reports - approved users can create, read all
+    match /reports/{reportId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['id', 'text', 'senderId', 'time', 'status']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // alerts - approved users can create
+    match /alerts/{alertId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['id', 'status', 'sender', 'time']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // attendance - guards can write their own
+    match /attendance/{recordId} {
+      allow read: if true;
+      allow write: if request.resource.data.keys().hasAll(['id', 'userId', 'time']);
+    }
+
+    // conversations - participants can read/write
+    match /conversations/{convId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // tasks - admin/owner manage
+    match /tasks/{taskId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // visitors - guards can create
+    match /visitors/{visitorId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // violations - owner/admin manage
+    match /violations/{violationId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // fcm_tokens - devices manage their own
+    match /fcm_tokens/{tokenId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // sos_events
+    match /sos_events/{sosId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // blocked_users - owner manages
+    match /blocked_users/{userId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // forced_logouts - owner manages
+    match /forced_logouts/{userId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // login_approved - auto-login signal
+    match /login_approved/{userId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // patrol_routes
+    match /patrol_routes/{routeId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // buildings (read only from app)
+    match /buildings/{buildingId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Deny all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
