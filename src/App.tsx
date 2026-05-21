@@ -352,29 +352,8 @@ export default function App() {
     };
   }, []);
 
-  // Request permissions immediately when app loads (web + APK)
-  useEffect(() => {
-    const askPermissions = async () => {
-      // Ask notifications
-      if ("Notification" in window && Notification.permission === "default") {
-        try { await Notification.requestPermission(); } catch { /* ignore */ }
-      }
-      // Ask camera + mic together (single dialog)
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        stream.getTracks().forEach(t => t.stop());
-      } catch {
-        // Try mic only
-        try {
-          const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-          s.getTracks().forEach(t => t.stop());
-        } catch { /* ignore */ }
-      }
-    };
-    // Ask after 2 seconds on any page load
-    const timer = setTimeout(() => { void askPermissions(); }, 2000);
-    return () => clearTimeout(timer);
-  }, []);
+  // Request permissions after login (not on load - conflicts with QR scanner)
+  // Handled by requestAllPermissions() called after sign-in
   const [loginLockedUntil, setLoginLockedUntil] = useState<number>(0);
   const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
   const [editReportId, setEditReportId] = useState<string | null>(null);
@@ -866,15 +845,7 @@ export default function App() {
         showToast(language === "ar" ? "🎙️ تم تفعيل الميكروفون" : "🎙️ Microphone enabled", "success");
       }
     } catch { /* ignore */ }
-    // Camera
-    try {
-      const c = await navigator.permissions.query({ name: "camera" as PermissionName });
-      if (c.state === "prompt") {
-        const s = await navigator.mediaDevices.getUserMedia({ video: true });
-        s.getTracks().forEach(t => t.stop());
-        showToast(language === "ar" ? "📷 تم تفعيل الكاميرا" : "📷 Camera enabled", "success");
-      }
-    } catch { /* ignore */ }
+    // Camera permission checked when QR scanner opens (not here to avoid conflicts)
   };
 
   // ─── Auto-logout if current user deleted from Firebase ──────────────────────
