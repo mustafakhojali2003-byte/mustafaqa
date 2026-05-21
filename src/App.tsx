@@ -327,6 +327,7 @@ export default function App() {
   const [qrModalBuilding, setQrModalBuilding] = useState<string | null>(null);
   const [stoppedAlertIds, setStoppedAlertIds] = useState<Set<string>>(new Set());
   const [deletedUserIds, setDeletedUserIds] = useState<Set<string>>(new Set());
+  const [pendingUserId, setPendingUserId] = useState<string | null>(() => window.localStorage.getItem("mustafaqa-pending-id") || null);
   const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
   const [editReportId, setEditReportId] = useState<string | null>(null);
   const [editReportForm, setEditReportForm] = useState({ text: "", status: "normal" as ReportStatus });
@@ -902,7 +903,9 @@ export default function App() {
     try {
       await savePendingUser(newUser);
       mutate(prev => ({ ...prev, users: [newUser, ...prev.users], auditLog: [createAuditEntry(null, "account_request", newUser.email, "طلب حساب جديد", "warning"), ...prev.auditLog] }));
-      setAuthInfo(language === "ar" ? "✅ تم إرسال الطلب وهو بانتظار موافقة المالك — ستتلقى إشعاراً عند الموافقة" : "✅ Request submitted — pending owner approval. You will be notified when approved");
+      setPendingUserId(newUser.id);
+      window.localStorage.setItem("mustafaqa-pending-id", newUser.id);
+      setAuthInfo(language === "ar" ? "✅ تم إرسال الطلب — ستدخل التطبيق تلقائياً عند موافقة المالك" : "✅ Request submitted — you will be logged in automatically when approved");
       // Request notification permission after registration
       if ("Notification" in window && Notification.permission === "default") {
         Notification.requestPermission().catch(() => undefined);
@@ -1088,12 +1091,31 @@ export default function App() {
   };
 
   // Approve/reject user
-  const approveUser = (userId: string) => {
+  const approveUser = async (userId: string) => {
     if (!currentUser) return;
-    mutate(prev => ({ ...prev, users: prev.users.map(u => u.id === userId ? { ...u, status: "approved" } : u), auditLog: [createAuditEntry(currentUser, "approve_user", userId, "تمت الموافقة على المستخدم", "info"), ...prev.auditLog] }), language === "ar" ? "تمت الموافقة" : "Approved");
     const approvedUser = [...snapshot.users, ...remotePendingUsers].find(u => u.id === userId);
-    if (approvedUser) void saveApprovedUser({ ...approvedUser, status: "approved" });
+    if (!approvedUser) return;
+    const updatedUser = { ...approvedUser, status: "approved" as const };
+    // Save to approved_users in Firebase
+    await saveApprovedUser(updatedUser);
+    // Delete from pending
     void deletePendingUserRemote(userId);
+    // Write auto-login signal so user's device logs in immediately
+    try {
+      const { setDoc, doc } = await import("firebase/firestore");
+      const { firestore } = await import("./services/firebase");
+      await setDoc(doc(firestore, "login_approved", userId), {
+        userId, approvedAt: nowStamp(), approvedBy: currentUser.name
+      });
+    } catch { /* offline */ }
+    mutate(prev => ({
+      ...prev,
+      users: prev.users.map(u => u.id === userId ? updatedUser : u),
+      auditLog: [createAuditEntry(currentUser, "approve_user", userId, "تمت الموافقة على المستخدم", "info"), ...prev.auditLog],
+    }));
+    showToast(language === "ar" ? `✅ تمت الموافقة على ${approvedUser.name} — سيدخل التطبيق تلقائياً` : `✅ ${approvedUser.name} approved — will login automatically`, "success");
+    // Send push notification to approved user
+    void sendPushViaWorker("✅ تمت الموافقة على حسابك", language === "ar" ? "يمكنك الآن تسجيل الدخول" : "You can now login", "task", userId);
   };
 
   const rejectUser = (userId: string) => {
