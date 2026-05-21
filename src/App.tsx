@@ -378,6 +378,7 @@ export default function App() {
   const reportMediaInputRef = useRef<HTMLInputElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recorderChunksRef = useRef<Blob[]>([]);
+  const [recordingStartTime, setRecordingStartTime] = useState<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
   const toastTimer = useRef<number | null>(null);
   const prevAlertCount = useRef(0);
@@ -2936,10 +2937,19 @@ export default function App() {
       };
       recorder.start(100); // collect data every 100ms
       setIsRecording(true);
+      setRecordingStartTime(Date.now());
     } catch { showToast(language === "ar" ? "تعذر الوصول للميكروفون" : "Microphone denied", "danger"); }
   };
 
   const stopVoiceRecord = () => {
+    const elapsed = Date.now() - recordingStartTime;
+    if (elapsed < 500) {
+      showToast(language === "ar" ? "اضغط واستمر للتسجيل" : "Hold longer to record", "info");
+      recorderRef.current?.stop();
+      recorderChunksRef.current = [];
+      setIsRecording(false);
+      return;
+    }
     recorderRef.current?.stop();
     setIsRecording(false);
   };
@@ -2996,18 +3006,15 @@ export default function App() {
                     {chatMediaUploading ? "⏳" : "📷"}
                   </button>
                   <button
-                    title={isRecording ? (language === "ar" ? "إيقاف التسجيل" : "Stop") : (language === "ar" ? "رسالة صوتية" : "Voice")}
-                    onMouseDown={() => { void startVoiceRecord(); }}
-                    onMouseUp={stopVoiceRecord}
-                    onTouchStart={() => { void startVoiceRecord(); }}
-                    onTouchEnd={stopVoiceRecord}
-                    className={`flex h-11 w-11 items-center justify-center rounded-2xl border text-lg transition ${isRecording ? "border-red-500/50 bg-red-500/20 animate-pulse" : "border-white/10 bg-white/5 hover:bg-white/10"}`}
+                    title={isRecording ? (language === "ar" ? "اضغط لإيقاف وإرسال" : "Tap to stop & send") : (language === "ar" ? "اضغط لبدء التسجيل" : "Tap to record")}
+                    onClick={() => { if (isRecording) { stopVoiceRecord(); } else { void startVoiceRecord(); } }}
+                    className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border text-lg transition ${isRecording ? "border-red-500/50 bg-red-500/20 animate-pulse scale-110" : "border-white/10 bg-white/5 hover:bg-white/10"}`}
                   >
-                    🎙️
+                    {isRecording ? "⏹️" : "🎙️"}
                   </button>
                   <Btn onClick={() => { sendMessage(chatInput); setChatInput(""); }}>{language === "ar" ? "إرسال" : "Send"}</Btn>
                 </div>
-                {isRecording && <div className="mt-2 text-center text-xs text-red-400 animate-pulse">⏺ {language === "ar" ? "جارٍ التسجيل... أفلت لإرسال" : "Recording... release to send"}</div>}
+                {isRecording && <div className="mt-2 flex items-center justify-center gap-2 text-xs text-red-400"><span className="animate-pulse">⏺</span>{language === "ar" ? "جارٍ التسجيل... اضغط ⏹️ لإيقاف وإرسال" : "Recording... tap ⏹️ to stop & send"}<span className="animate-pulse">⏺</span></div>}
               </div>
             ) : <EmptyMsg title={language === "ar" ? "اختر محادثة" : "Select a conversation"} text="" />}
           </Panel>
