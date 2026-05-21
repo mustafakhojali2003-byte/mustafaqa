@@ -853,11 +853,12 @@ export default function App() {
   };
 
   const handleCreateAccount = async (payload: NewAccountPayload) => {
+    try {
     setAuthError(null); setAuthInfo(null);
     const emailCheck = validateEmail(payload.email);
     if (!emailCheck.valid) return setAuthError(language === "ar" ? (emailCheck.errorAr ?? "بريد غير صحيح") : (emailCheck.errorEn ?? "Invalid email"));
-    if (snapshot.users.some(u => u.email.toLowerCase() === payload.email.trim().toLowerCase()) ||
-        remotePendingUsers.some(u => u.email.toLowerCase() === payload.email.trim().toLowerCase()))
+    const allUsers = [...snapshot.users, ...(remotePendingUsers ?? [])];
+    if (allUsers.some(u => u.email.toLowerCase() === payload.email.trim().toLowerCase()))
       return setAuthError(language === "ar" ? "البريد مستخدم بالفعل" : "Email already registered");
     if (emailCheck.suggestion) setAuthInfo(emailCheck.suggestion);
     const newUser: User = {
@@ -879,9 +880,13 @@ export default function App() {
       // Notify owner via Worker
       const owner = approvedUsers.find(u => u.role === "owner");
       if (owner) void sendPushViaWorker("⏳ طلب حساب جديد", `${newUser.name} — ${newUser.email}`, "pending_user", owner.id);
-    } catch {
+    } catch (innerErr) {
       mutate(prev => ({ ...prev, users: [newUser, ...prev.users] }));
       setAuthInfo(language === "ar" ? "تم الإرسال (وضع أوفلاين)" : "Submitted (offline mode)");
+    }
+    } catch (outerErr) {
+      setAuthError(language === "ar" ? "حدث خطأ، حاول مرة أخرى" : "An error occurred, please try again");
+      console.error("Create account error:", outerErr);
     }
   };
 

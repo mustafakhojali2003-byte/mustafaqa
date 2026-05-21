@@ -31,7 +31,7 @@ export default function AuthScreen({
     email: "",
     phone: "",
     role: "guard",
-    buildingId: buildings[0]?.id ?? "",
+    buildingId: buildings[0]?.id ?? "gate-1",
     password: "",
     confirmPassword: "",
   });
@@ -152,7 +152,7 @@ export default function AuthScreen({
                       <button type="button" onClick={() => setShowPassword((value) => !value)} className="text-slate-400">👁️</button>
                     </div>
                   </div>
-                  <button className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-400 text-lg font-black text-black transition hover:from-amber-400 hover:to-orange-300">
+                  <button type="submit" className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-400 text-lg font-black text-black transition hover:from-amber-400 hover:to-orange-300">
                     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
                       <path d="M12 3l7 3v5c0 5.25-3 8.5-7 10-4-1.5-7-4.75-7-10V6l7-3Z" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
@@ -212,7 +212,12 @@ export default function AuthScreen({
                        <input type="password" value={createForm.confirmPassword} onChange={(event) => setCreateForm((previous) => ({ ...previous, confirmPassword: event.target.value }))} className="h-12 w-full rounded-2xl border border-white/10 bg-[#070d22] px-4 text-white outline-none" required />
                     </div>
                   </div>
-                  <button className="flex h-12 w-full items-center justify-center rounded-2xl bg-gradient-to-r from-amber-500 to-orange-400 text-lg font-black text-black transition hover:from-amber-400 hover:to-orange-300">
+                  {localError && (
+                    <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                      {localError}
+                    </div>
+                  )}
+                  <button type="submit" className="flex h-12 w-full items-center justify-center rounded-2xl bg-gradient-to-r from-amber-500 to-orange-400 text-lg font-black text-black transition hover:from-amber-400 hover:to-orange-300">
                     {t(language, authContent.createAccountTab)}
                   </button>
                 </form>
