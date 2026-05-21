@@ -2924,27 +2924,68 @@ export default function App() {
 
   const startVoiceRecord = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Check microphone permission explicitly
+      if (navigator.permissions) {
+        try {
+          const perm = await navigator.permissions.query({ name: "microphone" as PermissionName });
+          if (perm.state === "denied") {
+            showToast(language === "ar" ? "🎙️ الميكروفون محجوب — افتح إعدادات المتصفح وأذن بالوصول" : "🎙️ Microphone blocked — enable it in browser settings", "danger");
+            return;
+          }
+        } catch { /* ignore - not all browsers support permissions API */ }
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 44100 }
+      });
       streamRef.current = stream;
-      const recorder = new MediaRecorder(stream);
+
+      // Pick best supported format
+      const mimeType = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/ogg;codecs=opus",
+        "audio/ogg",
+        "audio/mp4",
+      ].find(t => MediaRecorder.isTypeSupported(t)) ?? "";
+
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       recorderRef.current = recorder;
       recorderChunksRef.current = [];
-      recorder.ondataavailable = e => recorderChunksRef.current.push(e.data);
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) recorderChunksRef.current.push(e.data);
+      };
+
       recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
         if (!currentUser || !activeConversation) return;
-        if (recorderChunksRef.current.length === 0) {
-          showToast(language === "ar" ? "لم يتم تسجيل أي صوت" : "No audio recorded", "danger");
+
+        const chunks = recorderChunksRef.current;
+        if (chunks.length === 0) {
+          showToast(language === "ar" ? "لم يُسجَّل صوت — حاول مرة أخرى" : "No audio — try again", "danger");
           return;
         }
-        // Use supported format
-        const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/ogg";
-        const blob = new Blob(recorderChunksRef.current, { type: mimeType });
-        if (blob.size < 100) {
-          showToast(language === "ar" ? "التسجيل فارغ — حاول مرة أخرى" : "Recording empty — try again", "danger");
+
+        const finalMime = mimeType || "audio/webm";
+        const blob = new Blob(chunks, { type: finalMime });
+
+        if (blob.size < 500) {
+          showToast(language === "ar" ? "التسجيل قصير جداً" : "Recording too short", "danger");
           return;
         }
-        const audioUrl = await fileToDataUrl(new File([blob], `voice.${mimeType.split("/")[1]}`));
-        const msg: ChatMessage = { id: `msg-${Date.now()}`, senderId: currentUser.id, kind: "audio", audioUrl, time: chatTime(language) };
+
+        const ext = finalMime.includes("ogg") ? "ogg" : finalMime.includes("mp4") ? "mp4" : "webm";
+        const audioUrl = await fileToDataUrl(new File([blob], `voice-${Date.now()}.${ext}`, { type: finalMime }));
+
+        const elapsed = Math.round((Date.now() - recordingStartTime) / 1000);
+        const msg: ChatMessage = {
+          id: `msg-${Date.now()}`, senderId: currentUser.id,
+          kind: "audio", audioUrl,
+          text: `🎙️ ${elapsed}s`,
+          time: chatTime(language),
+        };
+
         mutate(prev => {
           const srcConv = conversationsSource.find(c => c.id === activeConversation.id);
           const baseC = srcConv ?? activeConversation;
@@ -2954,12 +2995,26 @@ export default function App() {
           if (locEx) return { ...prev, conversations: prev.conversations.map(c => c.id === activeConversation.id ? updated : c) };
           return { ...prev, conversations: [updated, ...prev.conversations] };
         });
-        stream.getTracks().forEach(t => t.stop());
+        // Send push notification to recipient
+        const conv = activeConversation;
+        const recipientId = conv.participantId;
+        void sendPushViaWorker("🎙️ رسالة صوتية", `${currentUser.name}`, "chat", recipientId);
       };
-      recorder.start(100); // collect data every 100ms
+
+      recorder.start(250); // chunk every 250ms for reliability
       setIsRecording(true);
       setRecordingStartTime(Date.now());
-    } catch { showToast(language === "ar" ? "تعذر الوصول للميكروفون" : "Microphone denied", "danger"); }
+      showToast(language === "ar" ? "🔴 يُسجَّل... اضغط ⏹️ للإرسال" : "🔴 Recording... tap ⏹️ to send", "info");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.includes("Permission") || msg.includes("NotAllowed") || msg.includes("denied")) {
+        showToast(language === "ar" ? "🎙️ يرجى السماح للمتصفح بالوصول للميكروفون" : "🎙️ Please allow microphone access in your browser", "danger");
+      } else if (msg.includes("NotFound") || msg.includes("Devices")) {
+        showToast(language === "ar" ? "🎙️ لا يوجد ميكروفون متصل" : "🎙️ No microphone found", "danger");
+      } else {
+        showToast(language === "ar" ? "🎙️ تعذر الوصول للميكروفون" : "🎙️ Microphone unavailable", "danger");
+      }
+    }
   };
 
   const stopVoiceRecord = () => {
@@ -3007,7 +3062,12 @@ export default function App() {
                             <div className={`max-w-[78%] rounded-2xl px-4 py-2 text-sm ${isMine ? "bg-amber-500/20 text-amber-100" : "bg-white/10 text-white"}`}>
                               {m.kind === "text" && <p>{m.text}</p>}
                               {m.kind === "image" && m.imageUrl && <img src={m.imageUrl} alt="media" className="max-h-48 rounded-xl object-cover" />}
-                              {m.kind === "audio" && m.audioUrl && <audio controls src={m.audioUrl} className="max-w-[220px]" />}
+                              {m.kind === "audio" && m.audioUrl && (
+                              <div className="flex items-center gap-2">
+                                <audio controls src={m.audioUrl} className="max-w-[200px] h-8" style={{ filter: "invert(0.1) sepia(1) saturate(5) hue-rotate(10deg)" }} />
+                                {m.text && <span className="text-xs opacity-60">{m.text}</span>}
+                              </div>
+                            )}
                               <div className="mt-1 text-xs opacity-50">{m.time}</div>
                             </div>
                           </div>
