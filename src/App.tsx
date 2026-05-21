@@ -524,12 +524,15 @@ export default function App() {
 
   const visibleConversations = useMemo(() => {
     if (!currentUser) return [];
-    // Owner/Admin: see all users as conversations
+    // Owner/Admin: see all CURRENT approved users (not deleted ones)
     if (currentUser.role === "owner" || currentUser.role === "admin") {
-      return approvedUsers.filter(u => u.id !== currentUser.id).map(u => {
-        const existing = conversationsSource.find(c => c.participantId === u.id);
-        return existing ?? { id: `c-${u.id}`, participantId: u.id, participantName: u.name, participantRole: u.role, messages: [] };
-      });
+      // Use approvedUsers which already filters deletedUserIds
+      return approvedUsers
+        .filter(u => u.id !== currentUser.id && !deletedUserIds.has(u.id) && !blockedUserIds.has(u.id))
+        .map(u => {
+          const existing = conversationsSource.find(c => c.participantId === u.id);
+          return existing ?? { id: `c-${u.id}`, participantId: u.id, participantName: u.name, participantRole: u.role as Role, messages: [] };
+        });
     }
     // Guard: ONLY conversation with owner
     const owner = approvedUsers.find(u => u.role === "owner");
@@ -3369,11 +3372,23 @@ export default function App() {
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-2">
+                    <div className="flex flex-col items-end gap-1">
                     <Badge className={isCrit && !stoppedAlertIds.has(a.id) ? "border-red-400/30 bg-red-500/15 text-red-300" : isWarn ? "border-amber-400/30 bg-amber-500/15 text-amber-300" : "border-slate-400/30 bg-slate-500/15 text-slate-300"}>
                       {stoppedAlertIds.has(a.id) ? (language === "ar" ? "🔇 موقوف" : "🔇 Stopped") : isCrit ? (language === "ar" ? "حرج 🔥" : "Critical 🔥") : isWarn ? (language === "ar" ? "تحذير" : "Warning") : (language === "ar" ? "معلومة" : "Info")}
                     </Badge>
+                    {isOwner && (
+                      <Btn variant="danger" className="h-6 px-2 text-xs" onClick={async () => {
+                        mutate(prev => ({ ...prev, alerts: prev.alerts.filter(x => x.id !== a.id) }));
+                        void deleteAlertRemote(a.id);
+                        if (stoppedAlertIds.has(a.id) || (a as AlertLog & { stopped?: boolean }).stopped) {
+                          stopEmergencySound(); setEmergencyActive(false);
+                        }
+                        showToast(language === "ar" ? "🗑 تم حذف التنبيه" : "🗑 Alert deleted", "info");
+                      }}>🗑</Btn>
+                    )}
+                  </div>
                     {/* Stop button: sender can stop their own, owner can stop any */}
-                    {!stoppedAlertIds.has(a.id) && !(a as AlertLog & { stopped?: boolean }).stopped && (isOwner || a.sender === currentUser?.name) && (
+                    {!stoppedAlertIds.has(a.id) && !(a as AlertLog & { stopped?: boolean }).stopped && (isOwner || isAdmin || a.sender === currentUser?.name) && (
                       <Btn variant="secondary" className="h-7 px-3 text-xs" onClick={() => {
                         setStoppedAlertIds(prev => new Set([...prev, a.id]));
                         if (emergencyActive) { stopEmergencySound(); setEmergencyActive(false); }
