@@ -70,10 +70,39 @@ export async function sendPushViaWorker(
   userId?: string
 ): Promise<void> {
   try {
+    const isEmergency = type === "emergency" || type === "sos" || type === "alert";
     await fetch(WORKER_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, body, type, userId }),
+      body: JSON.stringify({
+        title,
+        body,
+        type,
+        userId,
+        priority: isEmergency ? "high" : "normal",
+        // Android: use notification channel for alarm sound
+        android: isEmergency ? {
+          priority: "high",
+          notification: {
+            channel_id: "qguard_emergency",
+            notification_priority: "PRIORITY_MAX",
+            sound: "default",
+            default_sound: true,
+            default_vibrate_timings: true,
+            default_light_settings: true,
+          }
+        } : undefined,
+        // APNS (iOS): critical alert with sound
+        apns: isEmergency ? {
+          headers: { "apns-priority": "10" },
+          payload: {
+            aps: {
+              sound: { critical: 1, name: "default", volume: 1.0 },
+              "content-available": 1,
+            }
+          }
+        } : undefined,
+      }),
     });
   } catch { /* silent fail */ }
 }

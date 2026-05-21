@@ -46,16 +46,16 @@ messaging.onBackgroundMessage((payload) => {
     ? [{ action: "view_visitor", title: "🎫 عرض الزائر" }]
     : [{ action: "view", title: "📱 فتح" }];
 
-  self.registration.showNotification(title || "MUSTAFA.QA", {
+  self.registration.showNotification(title || "QGuard", {
     body: body || "",
-    icon: "/logo.svg",
-    badge: "/logo.svg",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
     tag,
-    requireInteraction: isEmergency || isChat || isReport,
+    requireInteraction: isEmergency || isTask || isReport,
     renotify: true,
     silent: false,
     vibrate: isEmergency
-      ? [500, 200, 500, 200, 500]
+      ? [500, 200, 500, 200, 500, 200, 500]
       : isChat || isReport
       ? [300, 100, 300, 100, 300]
       : [200, 100, 200],
@@ -106,7 +106,7 @@ self.addEventListener("message", async (event) => {
   if (data.type === "SHOW_NOTIFICATION") {
     const p = data.payload || {};
     const isEmergency = p.tag === "qa-emergency" || p.requireInteraction;
-    await self.registration.showNotification(p.title || "MUSTAFA.QA", {
+    await self.registration.showNotification(p.title || "QGuard", {
       body: p.body || "",
       tag: p.tag || `qa-${Date.now()}`,
       requireInteraction: !!p.requireInteraction,
