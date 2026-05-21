@@ -524,14 +524,28 @@ export default function App() {
 
   const visibleConversations = useMemo(() => {
     if (!currentUser) return [];
-    // Owner/Admin: see all CURRENT approved users (not deleted ones)
+    // Owner/Admin: see all CURRENT approved users (not deleted/blocked)
     if (currentUser.role === "owner" || currentUser.role === "admin") {
-      // Use approvedUsers which already filters deletedUserIds
-      return approvedUsers
-        .filter(u => u.id !== currentUser.id && !deletedUserIds.has(u.id) && !blockedUserIds.has(u.id))
+      // Start from approvedUsers (already filters deleted+blocked)
+      const activeUsers = approvedUsers
+        .filter(u => u.id !== currentUser.id && !deletedUserIds.has(u.id) && !blockedUserIds.has(u.id));
+      
+      // Map each user to their conversation (or create empty one)
+      // deduplicate by participantId
+      const seen = new Set<string>();
+      return activeUsers
+        .filter(u => { if (seen.has(u.id)) return false; seen.add(u.id); return true; })
         .map(u => {
+          // Find existing conversation from Firebase for this user
           const existing = conversationsSource.find(c => c.participantId === u.id);
-          return existing ?? { id: `c-${u.id}`, participantId: u.id, participantName: u.name, participantRole: u.role as Role, messages: [] };
+          if (existing) return { ...existing, participantName: u.name, participantRole: u.role as Role };
+          return { id: `c-${u.id}`, participantId: u.id, participantName: u.name, participantRole: u.role as Role, messages: [] };
+        })
+        .sort((a, b) => {
+          // Sort by last message time (most recent first)
+          const aTime = a.messages?.[a.messages.length - 1]?.time ?? "";
+          const bTime = b.messages?.[b.messages.length - 1]?.time ?? "";
+          return bTime.localeCompare(aTime);
         });
     }
     // Guard: ONLY conversation with owner
