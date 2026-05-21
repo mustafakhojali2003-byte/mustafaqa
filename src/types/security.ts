@@ -10,7 +10,7 @@ export interface Pair { ar: string; en: string; }
 export interface User {
   id: string; name: string; email: string; phone: string; role: Role;
   status: "approved" | "pending"; permissions: string[];
-  assignedBuildingId?: string; rating: number; passwordHash: string;
+  assignedBuildingId?: string; securityNumber?: string; rating: number; passwordHash: string;
   soundEnabled: boolean; desktopNotificationsEnabled: boolean;
   showFullToAdmin: boolean; createdAt: string; avatar?: string;
   violations?: number; lastSeen?: string;
@@ -87,7 +87,7 @@ export interface Violation {
   id: string; guardId: string; guardName: string; type: string;
   description: string; severity: "minor" | "major" | "critical";
   buildingId: string; date: string; acknowledged: boolean;
-  createdBy: string; createdAt: string; issuedBy?: string; issuedAt?: string;
+  createdBy: string; createdAt: string; issuedBy?: string; issuedAt?: string; notes?: string;
 }
 
 export interface SOSEvent {

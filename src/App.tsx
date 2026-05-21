@@ -468,7 +468,7 @@ export default function App() {
     const map = new Map<string, Violation>();
     snapshot.violations.forEach(v => map.set(v.id, v));
     remoteViolations.forEach(v => map.set(v.id, v));
-    return Array.from(map.values()).sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
+    return Array.from(map.values()).sort((a, b) => (b.createdAt ?? b.issuedAt ?? "").localeCompare(a.createdAt ?? a.issuedAt ?? ""));
   }, [snapshot.violations, remoteViolations]);
 
   const mergedSOSEvents = useMemo(() => {
@@ -959,8 +959,8 @@ export default function App() {
   // Reports
   const submitReport = async (e: FormEvent) => {
     e.preventDefault();
-    if (!currentUser || !approvedUsers.some(u => u.id === currentUser.id) && currentUser.email !== OWNER_EMAIL) {
-      setAuthError(language === "ar" ? "حسابك غير نشط" : "Account inactive"); setCurrentUser(null); return;
+    if (!currentUser || !approvedUsers.some(u => u.id === currentUser.id) && currentUser.email !== "mustafakhojali884@gmail.com") {
+      setAuthError(language === "ar" ? "حسابك غير نشط" : "Account inactive"); setCurrentUserId(null); return;
     }
     if (!currentUser || !reportForm.text.trim()) return;
     // Use QR-scanned building if available, else form selection
@@ -1018,7 +1018,7 @@ export default function App() {
     if (!currentUser || !violationForm.guardId || !violationForm.type) return;
     const guard = approvedUsers.find(u => u.id === violationForm.guardId);
     if (!guard) return;
-    const v: Violation = { id: `viol-${Date.now()}`, guardId: violationForm.guardId, guardName: guard.name, type: violationForm.type, description: violationForm.description, severity: violationForm.severity, buildingId: violationForm.buildingId || undefined, issuedBy: currentUser.name, issuedAt: nowStamp(), acknowledged: false };
+    const v: Violation = { id: `viol-${Date.now()}`, guardId: violationForm.guardId, guardName: guard.name, type: violationForm.type, description: violationForm.description, severity: violationForm.severity, buildingId: violationForm.buildingId || "", date: today(), createdBy: currentUser.name, createdAt: nowStamp(), acknowledged: false };
     mutate(prev => ({
       ...prev, violations: [v, ...prev.violations],
       users: prev.users.map(u => u.id === violationForm.guardId ? { ...u, violations: (u.violations ?? 0) + 1 } : u),
