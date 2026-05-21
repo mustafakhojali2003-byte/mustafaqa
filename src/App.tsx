@@ -792,6 +792,35 @@ export default function App() {
     prevAlertCount.current = mergedAlerts.length;
   }, [currentUser, mergedAlerts]);
 
+  // ─── Request all permissions after login ────────────────────────────────────
+  const requestAllPermissions = async () => {
+    // Notifications
+    if ("Notification" in window && Notification.permission === "default") {
+      try {
+        const p = await Notification.requestPermission();
+        if (p === "granted") { void initFCM(); showToast(language === "ar" ? "🔔 تم تفعيل الإشعارات" : "🔔 Notifications enabled", "success"); }
+      } catch { /* ignore */ }
+    }
+    // Microphone
+    try {
+      const m = await navigator.permissions.query({ name: "microphone" as PermissionName });
+      if (m.state === "prompt") {
+        const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+        s.getTracks().forEach(t => t.stop());
+        showToast(language === "ar" ? "🎙️ تم تفعيل الميكروفون" : "🎙️ Microphone enabled", "success");
+      }
+    } catch { /* ignore */ }
+    // Camera
+    try {
+      const c = await navigator.permissions.query({ name: "camera" as PermissionName });
+      if (c.state === "prompt") {
+        const s = await navigator.mediaDevices.getUserMedia({ video: true });
+        s.getTracks().forEach(t => t.stop());
+        showToast(language === "ar" ? "📷 تم تفعيل الكاميرا" : "📷 Camera enabled", "success");
+      }
+    } catch { /* ignore */ }
+  };
+
   // ─── Auto-logout if current user deleted from Firebase ──────────────────────
   useEffect(() => {
     if (!currentUserId) return;
