@@ -2049,8 +2049,13 @@ export default function App() {
 
       {/* Guard: my assigned route */}
       {isGuard && currentUser && (() => {
-        const allRoutes = [...remotePatrolRoutes, ...patrolRoutes.filter(r => !remotePatrolRoutes.some(x => x.id === r.id))];
-      const myRoute = allRoutes.find(r => r.assignedGuardId === currentUser.id && r.active);
+        // Merge remote (Firebase) + local routes, deduplicate by id
+      const allRoutes = [...remotePatrolRoutes, ...patrolRoutes]
+        .filter((r, i, arr) => arr.findIndex(x => x.id === r.id) === i);
+      const myRoute = allRoutes.find(r =>
+        (r.assignedGuardId === currentUser.id || r.assignedGuardId === currentUser.email) &&
+        r.active !== false
+      );
         return myRoute ? (
           <Panel className="border-amber-400/20">
             <div className="mb-3 flex items-center justify-between">
@@ -2200,18 +2205,29 @@ export default function App() {
                     scheduleTime: newRouteTime || undefined, notes: newRouteNotes || undefined,
                   };
                   setPatrolRoutes(prev => [...prev, route]);
-                  // Save to Firebase
+                  // Save to Firebase + notify assigned guard
                   (async () => {
                     try {
                       const { setDoc, doc } = await import("firebase/firestore");
                       const { firestore } = await import("./services/firebase");
                       await setDoc(doc(firestore, "patrol_routes", route.id), route);
+                      // Send push notification to assigned guard
+                      if (route.assignedGuardId && route.assignedGuardName) {
+                        void sendPushViaWorker(
+                          language === "ar" ? `🚶 مسار جولة جديد: ${route.nameAr}` : `🚶 New Patrol Route: ${route.name}`,
+                          language === "ar"
+                            ? `تم تخصيص مسار جولة لك${route.scheduleTime ? ` · ${route.scheduleTime}` : ""}`
+                            : `A patrol route has been assigned to you${route.scheduleTime ? ` · ${route.scheduleTime}` : ""}`,
+                          "task",
+                          route.assignedGuardId
+                        );
+                      }
                     } catch { /* offline - local only */ }
                   })();
                   setNewRouteName({ ar: "", en: "" }); setSelectedRouteBuildings([]);
                   setNewRouteGuardId(""); setNewRouteTime(""); setNewRouteNotes("");
                   setShowCreateRoute(false);
-                  showToast(language === "ar" ? "✅ تم إنشاء المسار وحفظه" : "✅ Route created and saved", "success");
+                  showToast(language === "ar" ? "✅ تم إنشاء المسار وإشعار الحارس" : "✅ Route created and guard notified", "success");
                 }}>{language === "ar" ? "✅ إنشاء المسار" : "✅ Create Route"}</Btn>
               </div>
             )}
