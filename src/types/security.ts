@@ -79,7 +79,7 @@ export interface Shift {
   date: string; startTime: string; endTime: string;
   status: "scheduled" | "active" | "completed" | "missed";
   checkInTime?: string; checkOutTime?: string;
-  endOfShiftReport?: string; createdAt: string;
+  endOfShiftReport?: string; createdAt: string; notes?: string;
   overtimeMinutes?: number;
 }
 

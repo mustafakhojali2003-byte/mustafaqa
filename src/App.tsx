@@ -834,7 +834,7 @@ export default function App() {
     if ("Notification" in window && Notification.permission === "default") {
       try {
         const p = await Notification.requestPermission();
-        if (p === "granted") { void initFCM(); showToast(language === "ar" ? "🔔 تم تفعيل الإشعارات" : "🔔 Notifications enabled", "success"); }
+        if (p === "granted") { if (currentUser) void initFCM(currentUser.id); showToast(language === "ar" ? "🔔 تم تفعيل الإشعارات" : "🔔 Notifications enabled", "success"); }
       } catch { /* ignore */ }
     }
     // Microphone
@@ -1561,7 +1561,7 @@ export default function App() {
 
         {/* ── Secondary stats ── */}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-[28px] border border-white/10 bg-[#0b132b]/90 p-4 min-h-0 cursor-pointer hover:border-white/20 transition" onClick={() => setActiveTab("shifts")}>
+          <div className="rounded-[28px] border border-white/10 bg-[#0b132b]/90 p-4 min-h-0 cursor-pointer hover:border-white/20 transition" onClick={() => setActiveTab("settings")}>
             <div className="text-2xl font-black text-white">{mergedShifts.filter(s => s.date === todayStr).length}</div>
             <div className="text-xs text-slate-400 mt-1">{language === "ar" ? "نوبات اليوم" : "Today Shifts"}</div>
           </div>
@@ -3212,7 +3212,6 @@ export default function App() {
       target: targetLabel,
       text: alertForm.text.trim(),
       sender: currentUser.name,
-      senderId: currentUser.id,
       senderRole: currentUser.role,
       time: nowStamp(),
       severity: typeInfo.severity,
@@ -3393,7 +3392,7 @@ export default function App() {
                     {isOwner && (
                       <Btn variant="danger" className="h-6 px-2 text-xs" onClick={async () => {
                         mutate(prev => ({ ...prev, alerts: prev.alerts.filter(x => x.id !== a.id) }));
-                        void deleteAlertRemote(a.id);
+                        void deleteAlert(a.id);
                         if (stoppedAlertIds.has(a.id) || (a as AlertLog & { stopped?: boolean }).stopped) {
                           stopEmergencySound(); setEmergencyActive(false);
                         }

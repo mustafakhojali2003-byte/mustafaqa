@@ -65,6 +65,8 @@ export function sendToServiceWorker(payload: NotificationPayload) {
 }
 
 // ─── Audio helpers ────────────────────────────────────────────────────────────
+let sharedCtx: AudioContext | null = null;
+
 function getAudioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
   const AudioContextCtor =
@@ -158,7 +160,7 @@ export async function startEmergencySound() {
   // Try again after a short delay if still not running
   if (ctx.state !== "running") {
     await new Promise(r => setTimeout(r, 100));
-    if (ctx.state !== "running") {
+    if ((ctx.state as string) !== "running") {
       console.warn("AudioContext state:", ctx.state);
       return;
     }
