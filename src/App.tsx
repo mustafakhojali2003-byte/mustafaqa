@@ -4497,7 +4497,27 @@ export default function App() {
   };
 
   if (!currentUser) {
-    return <AuthScreen language={language} buildings={snapshot.buildings} errorMessage={authError} infoMessage={authInfo} onSignIn={handleSignIn} onCreateAccount={handleCreateAccount} onLanguageChange={lang => { setLanguage(lang); document.documentElement.dir = lang === "ar" ? "rtl" : "ltr"; window.localStorage.setItem(LANGUAGE_KEY, lang); }} />;
+    const isInAPK = window.navigator.userAgent.includes("wv") || (window as any).Capacitor;
+    return (
+      <>
+        {!isInAPK && (
+          <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-amber-400/30 bg-[#0b132b] p-4 shadow-2xl">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl flex-shrink-0">📱</span>
+              <div className="flex-1 min-w-0">
+                <div className="font-black text-amber-300 text-sm">{language === "ar" ? "حمّل تطبيق QGuard للحصول على جميع الأذونات" : "Download QGuard app for full permissions"}</div>
+                <div className="text-xs text-slate-400">{language === "ar" ? "الكاميرا والميكروفون والإشعارات تعمل أفضل في التطبيق" : "Camera, mic & notifications work better in the app"}</div>
+              </div>
+              <a href="https://github.com/mustafakhojali2003-byte/mustafaqa/releases/latest" target="_blank" rel="noopener noreferrer"
+                className="flex-shrink-0 rounded-xl bg-amber-500 px-3 py-2 text-xs font-black text-black">
+                {language === "ar" ? "تحميل" : "Download"}
+              </a>
+            </div>
+          </div>
+        )}
+        <AuthScreen language={language} buildings={snapshot.buildings} errorMessage={authError} infoMessage={authInfo} onSignIn={handleSignIn} onCreateAccount={handleCreateAccount} onLanguageChange={lang => { setLanguage(lang); document.documentElement.dir = lang === "ar" ? "rtl" : "ltr"; window.localStorage.setItem(LANGUAGE_KEY, lang); }} />
+      </>
+    );
   }
 
   return (
