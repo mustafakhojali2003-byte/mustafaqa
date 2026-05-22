@@ -7,9 +7,10 @@ type Props = {
   closeLabel: string;
   onClose: () => void;
   onDetected: (code: string) => void;
+  allowManual?: boolean; // false for attendance (anti-cheat), true for reports/patrol
 };
 
-export default function QrScannerModal({ open, title, hint, closeLabel, onClose, onDetected }: Props) {
+export default function QrScannerModal({ open, title, hint, closeLabel, onClose, onDetected, allowManual = false }: Props) {
   const rawId = useId();
   const mountId = `qr-reader-${rawId.replace(/[:]/g, "")}`;
   const [error, setError] = useState<string | null>(null);
@@ -137,9 +138,16 @@ export default function QrScannerModal({ open, title, hint, closeLabel, onClose,
               <button onClick={startScanner} className="rounded-2xl bg-amber-500 py-3 text-sm font-black text-black">
                 🔄 إعادة المحاولة
               </button>
-              <button onClick={() => setShowManual(true)} className="rounded-2xl border border-white/10 bg-white/5 py-3 text-sm font-bold text-slate-300">
-                ✏️ إدخال يدوي
-              </button>
+              {allowManual && (
+                <button onClick={() => setShowManual(true)} className="rounded-2xl border border-white/10 bg-white/5 py-3 text-sm font-bold text-slate-300">
+                  ✏️ إدخال يدوي
+                </button>
+              )}
+              {!allowManual && (
+                <div className="rounded-2xl border border-red-500/20 bg-red-500/5 py-3 text-xs text-red-400 text-center">
+                  🔒 تسجيل الحضور يتطلب مسح QR فقط
+                </div>
+              )}
             </div>
           </div>
         )}

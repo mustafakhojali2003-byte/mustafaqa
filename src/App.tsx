@@ -845,7 +845,16 @@ export default function App() {
         showToast(language === "ar" ? "🎙️ تم تفعيل الميكروفون" : "🎙️ Microphone enabled", "success");
       }
     } catch { /* ignore */ }
-    // Camera permission checked when QR scanner opens (not here to avoid conflicts)
+    // Camera - request after mic (sequential to avoid conflicts)
+    await new Promise(r => setTimeout(r, 500));
+    try {
+      const c = await navigator.permissions.query({ name: "camera" as PermissionName });
+      if (c.state === "prompt") {
+        const s = await navigator.mediaDevices.getUserMedia({ video: true });
+        s.getTracks().forEach(t => t.stop());
+        showToast(language === "ar" ? "📷 تم تفعيل الكاميرا" : "📷 Camera enabled", "success");
+      }
+    } catch { /* user denied - will be asked again when opening QR */ }
   };
 
   // ─── Auto-logout if current user deleted from Firebase ──────────────────────
@@ -4556,7 +4565,7 @@ export default function App() {
       </nav>
       <main className="mx-auto max-w-7xl px-4 py-8">{renderContent()}</main>
       <VisitorManagementModal open={visitorModalOpen} language={language} buildings={snapshot.buildings} onClose={() => setVisitorModalOpen(false)} onSubmit={payload => { void createVisitor(payload); }} />
-      <QrScannerModal open={qrModalOpen} title={language === "ar" ? "ماسح QR" : "QR Scanner"} hint={language === "ar" ? "وجّه الكاميرا نحو رمز QR" : "Point camera at QR code"} closeLabel={language === "ar" ? "إغلاق" : "Close"} onClose={() => { setQrModalOpen(false); setQrContext(null); }} onDetected={handleQrDetected} />
+      <QrScannerModal open={qrModalOpen} title={language === "ar" ? "ماسح QR" : "QR Scanner"} hint={language === "ar" ? "وجّه الكاميرا نحو رمز QR" : "Point camera at QR code"} closeLabel={language === "ar" ? "إغلاق" : "Close"} onClose={() => { setQrModalOpen(false); setQrContext(null); }} onDetected={handleQrDetected} allowManual={qrContext === "report" || qrContext === "patrol"} />
       {emergencyActive && (
         <div className="fixed bottom-20 right-4 z-50">
           <Btn variant="danger" onClick={() => { stopEmergencySound(); setEmergencyActive(false); }}>{language === "ar" ? "🔇 إيقاف الصفارة" : "🔇 Stop Siren"}</Btn>
