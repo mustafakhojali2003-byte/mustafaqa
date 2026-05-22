@@ -331,6 +331,7 @@ export default function App() {
   const [newRouteNotes, setNewRouteNotes] = useState("");
   const [qrModalBuilding, setQrModalBuilding] = useState<string | null>(null);
   const [stoppedAlertIds, setStoppedAlertIds] = useState<Set<string>>(new Set());
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [deletedUserIds, setDeletedUserIds] = useState<Set<string>>(new Set());
   const [pendingUserId, setPendingUserId] = useState<string | null>(() => window.localStorage.getItem("mustafaqa-pending-id") || null);
   const [loginAttempts, setLoginAttempts] = useState<number>(0);
@@ -2633,10 +2634,19 @@ export default function App() {
                   <p className="text-sm text-slate-300 mb-3">{r.text}</p>
                 )}
 
-                {/* Photo */}
+                {/* Photo - thumbnail with lightbox */}
                 {r.mediaUrl && r.mediaUrl !== "__local__" && (
-                  <div className="mb-3">
-                    <img src={r.mediaUrl} alt="report" className="max-h-56 w-full rounded-2xl object-cover border border-white/10" />
+                  <div className="mb-3 flex items-start gap-3">
+                    <button
+                      onClick={() => setLightboxUrl(r.mediaUrl!)}
+                      className="group relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-2xl border border-white/10 hover:border-amber-400/50 transition"
+                    >
+                      <img src={r.mediaUrl} alt="report" className="h-full w-full object-cover group-hover:scale-105 transition-transform" />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition">
+                        <span className="opacity-0 group-hover:opacity-100 text-white text-lg transition">🔍</span>
+                      </div>
+                    </button>
+                    <div className="text-xs text-slate-400 mt-1">اضغط لتكبير الصورة</div>
                   </div>
                 )}
 
@@ -4726,6 +4736,29 @@ export default function App() {
             <p className="mt-4 text-center text-xs text-slate-600">
               {language === "ar" ? "يمكنك تفعيلها لاحقاً من الإعدادات" : "You can enable later from Settings"}
             </p>
+          </div>
+        </div>
+      )}
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh] w-full mx-4" onClick={e => e.stopPropagation()}>
+            <img src={lightboxUrl} alt="" className="w-full h-full object-contain rounded-2xl max-h-[80vh]" />
+            <div className="mt-3 flex justify-center gap-3">
+              <a
+                href={lightboxUrl}
+                download="report-photo.jpg"
+                className="rounded-2xl bg-amber-500 px-6 py-2.5 text-sm font-black text-black"
+                onClick={e => e.stopPropagation()}
+              >⬇️ {language === "ar" ? "تحميل الصورة" : "Download"}</a>
+              <button
+                className="rounded-2xl border border-white/20 bg-white/10 px-6 py-2.5 text-sm font-bold text-white"
+                onClick={() => setLightboxUrl(null)}
+              >✕ {language === "ar" ? "إغلاق" : "Close"}</button>
+            </div>
           </div>
         </div>
       )}
