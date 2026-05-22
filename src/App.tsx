@@ -3415,12 +3415,13 @@ export default function App() {
                     </Badge>
                     {isOwner && (
                       <Btn variant="danger" className="h-6 px-2 text-xs" onClick={async () => {
-                        mutate(prev => ({ ...prev, alerts: prev.alerts.filter(x => x.id !== a.id) }));
+                        // Delete from Firebase → removed for ALL users
                         void deleteAlertRemote(a.id);
-                        if (stoppedAlertIds.has(a.id) || (a as AlertLog & { stopped?: boolean }).stopped) {
+                        mutate(prev => ({ ...prev, alerts: prev.alerts.filter(x => x.id !== a.id) }));
+                        if (!mergedAlerts.filter(x => x.id !== a.id).some(x => !(x as any).stopped && !stoppedAlertIds.has(x.id))) {
                           stopEmergencySound(); setEmergencyActive(false);
                         }
-                        showToast(language === "ar" ? "🗑 تم حذف التنبيه" : "🗑 Alert deleted", "info");
+                        showToast(language === "ar" ? "🗑 تم حذف التنبيه للجميع" : "🗑 Alert deleted for everyone", "info");
                       }}>🗑</Btn>
                     )}
                   </div>
