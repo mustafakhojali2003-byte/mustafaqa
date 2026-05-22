@@ -36,7 +36,9 @@ export interface Report {
 
 export interface AlertLog {
   id: string; status: string; target: string; text: string;
-  sender: string; time: string; severity: "info" | "warning" | "critical";
+  sender: string; senderId?: string; senderRole?: string;
+  time: string; severity: "info" | "warning" | "critical";
+  stopped?: boolean;
 }
 
 export interface AttendanceRecord {
