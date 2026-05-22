@@ -81,12 +81,29 @@ export function normalizeConversation(c: Conversation, message?: ChatMessage): C
 export const subscribeReports = (cb: (r: Report[]) => void) =>
   subscribe<Report>("reports", cb, "time");
 
-export const saveReport = (r: Report) => {
-  // Strip base64 images before saving to Firestore (1MB doc limit)
-  // Store only metadata, image stays in localStorage
+export const compressImage = (dataUrl: string, maxWidth = 800, quality = 0.7): Promise<string> =>
+  new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const ratio = Math.min(1, maxWidth / img.width);
+      canvas.width = img.width * ratio;
+      canvas.height = img.height * ratio;
+      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.src = dataUrl;
+  });
+
+export const saveReport = async (r: Report): Promise<void> => {
   const firestoreReport = { ...r };
+  // Compress and save image directly in Firestore (JPEG ~100-200KB)
   if (firestoreReport.mediaUrl && firestoreReport.mediaUrl.startsWith("data:")) {
-    firestoreReport.mediaUrl = "__local__"; // flag that image is local only
+    try {
+      firestoreReport.mediaUrl = await compressImage(firestoreReport.mediaUrl);
+    } catch {
+      firestoreReport.mediaUrl = "__local__";
+    }
   }
   return save("reports", r.id, firestoreReport);
 };
