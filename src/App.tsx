@@ -829,32 +829,35 @@ export default function App() {
 
   // ─── Request all permissions after login ────────────────────────────────────
   const requestAllPermissions = async () => {
-    // Notifications
-    if ("Notification" in window && Notification.permission === "default") {
+    // 1. Notifications - ask if not granted
+    if ("Notification" in window && Notification.permission !== "granted") {
       try {
         const p = await Notification.requestPermission();
-        if (p === "granted") { if (currentUser) void initFCM(currentUser.id); showToast(language === "ar" ? "🔔 تم تفعيل الإشعارات" : "🔔 Notifications enabled", "success"); }
+        if (p === "granted" && currentUser) void initFCM(currentUser.id);
       } catch { /* ignore */ }
     }
-    // Microphone
+
+    await new Promise(r => setTimeout(r, 300));
+
+    // 2. Microphone - ask if not granted (prompt OR denied = ask again)
     try {
-      const m = await navigator.permissions.query({ name: "microphone" as PermissionName });
-      if (m.state === "prompt") {
+      const micPerm = await navigator.permissions.query({ name: "microphone" as PermissionName });
+      if (micPerm.state !== "granted") {
         const s = await navigator.mediaDevices.getUserMedia({ audio: true });
         s.getTracks().forEach(t => t.stop());
-        showToast(language === "ar" ? "🎙️ تم تفعيل الميكروفون" : "🎙️ Microphone enabled", "success");
       }
-    } catch { /* ignore */ }
-    // Camera - request after mic (sequential to avoid conflicts)
-    await new Promise(r => setTimeout(r, 500));
+    } catch { /* denied - browser shows blocked icon */ }
+
+    await new Promise(r => setTimeout(r, 300));
+
+    // 3. Camera - ask if not granted
     try {
-      const c = await navigator.permissions.query({ name: "camera" as PermissionName });
-      if (c.state === "prompt") {
+      const camPerm = await navigator.permissions.query({ name: "camera" as PermissionName });
+      if (camPerm.state !== "granted") {
         const s = await navigator.mediaDevices.getUserMedia({ video: true });
         s.getTracks().forEach(t => t.stop());
-        showToast(language === "ar" ? "📷 تم تفعيل الكاميرا" : "📷 Camera enabled", "success");
       }
-    } catch { /* user denied - will be asked again when opening QR */ }
+    } catch { /* denied */ }
   };
 
   // ─── Auto-logout if current user deleted from Firebase ──────────────────────
