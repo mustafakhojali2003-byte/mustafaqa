@@ -1,0 +1,19 @@
+{
+	"appId": "qa.mustafa.security",
+	"appName": "QGuard",
+	"webDir": "dist",
+	"server": {
+		"url": "https://mustafaqa.vercel.app",
+		"cleartext": false
+	},
+	"android": {},
+	"plugins": {
+		"PushNotifications": {
+			"presentationOptions": [
+				"badge",
+				"sound",
+				"alert"
+			]
+		}
+	}
+}
