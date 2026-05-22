@@ -2450,7 +2450,16 @@ export default function App() {
       </div>
       {(isGuard || isAdmin || isOwner) && (
         <Panel>
+          {/* Camera capture input */}
           <input ref={reportPhotoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={async e => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const dataUrl = await fileToDataUrl(file);
+            setReportForm(p => ({ ...p, mediaUrl: dataUrl, mediaKind: "image", fileName: file.name }));
+            e.target.value = "";
+          }} />
+          {/* Gallery upload input */}
+          <input ref={reportGalleryRef} type="file" accept="image/*" className="hidden" onChange={async e => {
             const file = e.target.files?.[0];
             if (!file) return;
             const dataUrl = await fileToDataUrl(file);
@@ -2523,11 +2532,18 @@ export default function App() {
                   <button type="button" onClick={() => setReportForm(p => ({ ...p, mediaUrl: "", mediaKind: "", fileName: "" }))} className="absolute -top-2 -right-2 flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-white text-xs font-black">✕</button>
                 </div>
               ) : (
-                <button type="button" onClick={() => reportPhotoRef.current?.click()}
-                  className="flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-white/20 bg-white/5 py-6 text-slate-400 hover:border-amber-400/40 hover:bg-white/10 transition">
-                  <span className="text-4xl">📷</span>
-                  <span className="text-sm">{language === "ar" ? "التقاط صورة أو اختيار من المعرض" : "Take photo or choose from gallery"}</span>
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => reportPhotoRef.current?.click()}
+                    className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-white/20 bg-white/5 py-5 text-slate-400 hover:border-amber-400/40 hover:bg-white/10 transition">
+                    <span className="text-3xl">📸</span>
+                    <span className="text-xs font-bold">{language === "ar" ? "التقاط صورة" : "Take Photo"}</span>
+                  </button>
+                  <button type="button" onClick={() => reportGalleryRef.current?.click()}
+                    className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-white/20 bg-white/5 py-5 text-slate-400 hover:border-amber-400/40 hover:bg-white/10 transition">
+                    <span className="text-3xl">🖼️</span>
+                    <span className="text-xs font-bold">{language === "ar" ? "من المعرض" : "From Gallery"}</span>
+                  </button>
+                </div>
               )}
             </div>
 
