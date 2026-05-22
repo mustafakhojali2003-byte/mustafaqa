@@ -3111,11 +3111,16 @@ export default function App() {
       setRecordingStartTime(Date.now());
       showToast(language === "ar" ? "🔴 يُسجَّل... اضغط ⏹️ للإرسال" : "🔴 Recording... tap ⏹️ to send", "info");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "";
-      if (msg.includes("Permission") || msg.includes("NotAllowed") || msg.includes("denied")) {
-        showToast(language === "ar" ? "🎙️ يرجى السماح للمتصفح بالوصول للميكروفون" : "🎙️ Please allow microphone access in your browser", "danger");
-      } else if (msg.includes("NotFound") || msg.includes("Devices")) {
-        showToast(language === "ar" ? "🎙️ لا يوجد ميكروفون متصل" : "🎙️ No microphone found", "danger");
+      const name = (err as Error)?.name ?? "";
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+        showToast(
+          language === "ar"
+            ? "🎙️ الميكروفون محجوب — اضغط 🔒 في شريط العنوان ← إعدادات الموقع ← الميكروفون ← السماح"
+            : "🎙️ Mic blocked — tap 🔒 in address bar → Site Settings → Microphone → Allow",
+          "danger"
+        );
+      } else if (name === "NotFoundError") {
+        showToast(language === "ar" ? "🎙️ لا يوجد ميكروفون في الجهاز" : "🎙️ No microphone found", "danger");
       } else {
         showToast(language === "ar" ? "🎙️ تعذر الوصول للميكروفون" : "🎙️ Microphone unavailable", "danger");
       }
