@@ -51,11 +51,25 @@ export default function QrScannerModal({ open, title, hint, closeLabel, onClose,
     setPhase("loading");
     setShowManual(false);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      // Try constraints from most specific to least specific
+      let stream: MediaStream | null = null;
+      const constraints = [
+        { video: { facingMode: { exact: "environment" } } },
+        { video: { facingMode: "environment" } },
+        { video: { facingMode: "user" } },
+        { video: true },
+      ];
+      for (const constraint of constraints) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraint);
+          break;
+        } catch { /* try next */ }
+      }
+      if (!stream) throw new Error("NoStream");
       if (!runningRef.current) { stream.getTracks().forEach(t => t.stop()); return; }
       streamRef.current = stream;
       const v = videoRef.current;
-      if (!v) return;
+      if (!v) { stream.getTracks().forEach(t => t.stop()); return; }
       v.srcObject = stream;
       v.play().catch(() => {});
       setPhase("scanning");
@@ -63,7 +77,8 @@ export default function QrScannerModal({ open, title, hint, closeLabel, onClose,
     } catch (e: unknown) {
       runningRef.current = false;
       const n = (e as Error)?.name ?? "";
-      setPhase(n === "NotFoundError" ? "notfound" : "denied");
+      console.error("Camera error:", n, e);
+      setPhase(n === "NotFoundError" || n === "DevicesNotFoundError" ? "notfound" : "denied");
     }
   }, [stop, tick]);
 
