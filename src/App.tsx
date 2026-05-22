@@ -2459,7 +2459,7 @@ export default function App() {
             e.target.value = "";
           }} />
           {/* Gallery upload input */}
-          <input ref={reportGalleryRef} type="file" accept="image/*" className="hidden" onChange={async e => {
+          <input ref={reportMediaInputRef} type="file" accept="image/*" className="hidden" onChange={async e => {
             const file = e.target.files?.[0];
             if (!file) return;
             const dataUrl = await fileToDataUrl(file);
@@ -2538,7 +2538,7 @@ export default function App() {
                     <span className="text-3xl">📸</span>
                     <span className="text-xs font-bold">{language === "ar" ? "التقاط صورة" : "Take Photo"}</span>
                   </button>
-                  <button type="button" onClick={() => reportGalleryRef.current?.click()}
+                  <button type="button" onClick={() => reportMediaInputRef.current?.click()}
                     className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-white/20 bg-white/5 py-5 text-slate-400 hover:border-amber-400/40 hover:bg-white/10 transition">
                     <span className="text-3xl">🖼️</span>
                     <span className="text-xs font-bold">{language === "ar" ? "من المعرض" : "From Gallery"}</span>
