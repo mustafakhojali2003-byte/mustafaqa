@@ -442,7 +442,12 @@ export default function App() {
 
   const visibleTabs = useMemo((): Tab[] => {
     if (isGuard) return ["reports", "alerts", "buildings", "visitors", "attendance", "tasks", "chat", "patrol", "settings"];  // no violations, no scores
-    if (isAdmin) return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "tasks", "chat", "violations", "scores", "patrol", "settings"];
+    if (isAdmin) return [
+      "dashboard", "reports", "alerts", "buildings", "users", "visitors", "tasks", "chat",
+      ...(currentUser?.permissions?.includes("violations") ? ["violations" as Tab] : []),
+      ...(currentUser?.permissions?.includes("scores") ? ["scores" as Tab] : []),
+      "patrol", "settings"
+    ];
     return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "attendance", "tasks", "chat", "analytics", "audit", "violations", "scores", "patrol", "system", "settings"];
   }, [isAdmin, isGuard]);
 
