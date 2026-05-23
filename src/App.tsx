@@ -3,7 +3,7 @@ import AuthScreen from "./components/AuthScreen";
 import QrScannerModal from "./components/QrScannerModal";
 import VisitorManagementModal from "./components/VisitorManagementModal";
 import { playNormalAlertSound, registerNotificationServiceWorker, sendToServiceWorker, showSystemNotification, startEmergencySound, stopEmergencySound, vibrateDevice, vibrateEmergency } from "./services/notificationService";
-import { deleteAlertRemote, deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, savePendingUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers, saveConversation, subscribeReports, saveReport, deleteReportRemote, subscribeAlerts, saveAlert, subscribeVisitors, saveVisitor, updateVisitorRemote, subscribeAttendance, saveAttendance, subscribeTasks, saveTask, updateTaskRemote, deleteTaskRemote, subscribeShifts, saveShift, updateShiftRemote, subscribeViolations, saveViolation, updateViolationRemote, subscribeSOSEvents, saveSOSEvent, updateSOSEventRemote, subscribePatrolRoutes, savePatrolRoute } from "./services/firebaseData";
+import { deleteAlertRemote, deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, savePendingUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers, saveConversation, subscribeReports, saveReport, deleteReportRemote, subscribeAlerts, saveAlert, subscribeVisitors, saveVisitor, updateVisitorRemote, subscribeAttendance, saveAttendance, subscribeTasks, saveTask, updateTaskRemote, deleteTaskRemote, subscribeShifts, saveShift, updateShiftRemote, subscribeViolations, saveViolation, updateViolationRemote, subscribeSOSEvents, saveSOSEvent, updateSOSEventRemote, subscribePatrolRoutes, savePatrolRoute, deletePatrolRouteRemote } from "./services/firebaseData";
 import { exportReportsPDF, exportShiftReportPDF, exportFullDashboardPDF } from "./services/pdfService";
 import { generateVisitorQR, generateBuildingQR } from "./services/qrService";
 import { analyzeData } from "./services/analyticsService";
@@ -2265,8 +2265,6 @@ export default function App() {
                   // Save to Firebase + notify assigned guard
                   (async () => {
                     try {
-                      const { setDoc, doc } = await import("firebase/firestore");
-                      const { firestore } = await import("./services/firebase");
                       void savePatrolRoute(route);
                       // Send push notification to assigned guard
                       if (route.assignedGuardId && route.assignedGuardName) {
@@ -2328,13 +2326,7 @@ export default function App() {
                                 const guard = guardId ? guardUsers.find(g => g.id === guardId) : undefined;
                                 const updatedRoute = { ...r, nameAr, name: nameEn, assignedGuardId: guard?.id, assignedGuardName: guard?.name, scheduleTime: time || undefined, notes: notes || undefined };
                                 setPatrolRoutes(prev => prev.map(x => x.id === r.id ? updatedRoute : x));
-                                (async () => {
-                                  try {
-                                    const { setDoc, doc } = await import("firebase/firestore");
-                                    const { firestore } = await import("./services/firebase");
-                                    void savePatrolRoute(updatedRoute);
-                                  } catch { }
-                                })();
+                                void savePatrolRoute(updatedRoute);
                                 setEditRouteId(null);
                                 showToast(language === "ar" ? "✅ تم التحديث" : "✅ Updated", "success");
                               }}>{language === "ar" ? "💾 حفظ" : "💾 Save"}</Btn>
@@ -2373,11 +2365,7 @@ export default function App() {
                               </Btn>
                               <Btn variant="danger" className="h-8 px-3 text-xs" onClick={async () => {
                               setPatrolRoutes(prev => prev.filter(x => x.id !== r.id));
-                              try {
-                                const { deleteDoc, doc } = await import("firebase/firestore");
-                                const { firestore } = await import("./services/firebase");
-                                await deleteDoc(doc(firestore, "patrol_routes", r.id));
-                              } catch { }
+                              void deletePatrolRouteRemote(r.id);
                               showToast(language === "ar" ? "تم الحذف" : "Deleted", "info");
                             }}>🗑</Btn>
                             </div>

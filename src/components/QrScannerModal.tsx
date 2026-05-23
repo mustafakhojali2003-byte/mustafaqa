@@ -77,7 +77,6 @@ export default function QrScannerModal({ open, title, hint, closeLabel, onClose,
     } catch (e: unknown) {
       runningRef.current = false;
       const n = (e as Error)?.name ?? "";
-      console.error("Camera error:", n, e);
       setPhase(n === "NotFoundError" || n === "DevicesNotFoundError" ? "notfound" : "denied");
     }
   }, [stop, tick]);
