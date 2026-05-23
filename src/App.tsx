@@ -306,7 +306,7 @@ export default function App() {
   const [notificationPermission, setNotificationPermission] = useState("default");
   const [visitorModalOpen, setVisitorModalOpen] = useState(false);
   const [editingVisitorId, setEditingVisitorId] = useState<string | null>(null);
-  const [visitorDayFilter, setVisitorDayFilter] = useState<string>("today");
+  const [visitorDayFilter, setVisitorDayFilter] = useState<string>(() => new Date().toISOString().slice(0,10));
   const [multipleVisitors, setMultipleVisitors] = useState(false);
   const [remoteEntryLogs, setRemoteEntryLogs] = useState<EntryLog[]>([]);
   const [entryLogForm, setEntryLogForm] = useState({ name: "", company: "", purpose: "", notes: "", type: "person" as "person"|"company"|"meeting" });
@@ -402,6 +402,11 @@ export default function App() {
   });
   const [showShiftScheduler, setShowShiftScheduler] = useState(false);
   const [scoresPeriod, setScoresPeriod] = useState<"today"|"week"|"month"|"all">("all");
+  const [scoreOverrides, setScoreOverrides] = useState<Record<string, number>>(
+    () => JSON.parse(localStorage.getItem("mustafaqa-score-overrides") ?? "{}")
+  );
+  const [editingScoreGuardId, setEditingScoreGuardId] = useState<string | null>(null);
+  const [scoreAdjustInput, setScoreAdjustInput] = useState("");
   const [attendanceFilter, setAttendanceFilter] = useState<"today"|"week"|"month"|"all">("today");
   const [attendanceSearch, setAttendanceSearch] = useState("");
   const [attendanceView, setAttendanceView] = useState<"list"|"grid">("list");
@@ -681,18 +686,42 @@ export default function App() {
       alerts.forEach(a => {
         if (a.time < cutoffStr) void deleteAlertRemote(a.id);
       });
+      const toDelete = alerts.filter(a => a.time < cutoffStr);
+      if (toDelete.length > 0) {
+        // Export old alerts to Excel before deleting
+        void (async () => {
+          try {
+            const XLSX = await import("xlsx");
+            const ws = XLSX.utils.json_to_sheet(toDelete.map(a => ({ التاريخ: a.time, النوع: a.status, المرسل: a.sender, الهدف: a.target, النص: a.text, الخطورة: a.severity })));
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "التنبيهات القديمة");
+            XLSX.writeFile(wb, `QGuard-old-alerts-${new Date().toISOString().slice(0,10)}.xlsx`);
+          } catch { /* ignore export errors */ }
+          toDelete.forEach(a => void deleteAlertRemote(a.id));
+        })();
+      }
       setRemoteAlerts(alerts.filter(a => a.time >= cutoffStr));
     });
 
-    // Auto-cleanup reports older than 90 days (keep Firebase lean)
+    // Auto-cleanup reports older than 90 days - export first
     const reportCutoff = new Date();
     reportCutoff.setDate(reportCutoff.getDate() - 90);
     const reportCutoffStr = reportCutoff.toISOString().slice(0, 19).replace("T", " ");
     setTimeout(() => {
-      subscribeReports(reports => {
-        reports.filter(r => r.time < reportCutoffStr).forEach(r => void deleteReportRemote(r.id));
+      subscribeReports(async reports => {
+        const old = reports.filter(r => r.time < reportCutoffStr);
+        if (old.length > 0) {
+          try {
+            const XLSX = await import("xlsx");
+            const ws = XLSX.utils.json_to_sheet(old.map(r => ({ التاريخ: r.time, الحارس: r.senderName, المبنى: r.buildingId, الحالة: r.status, التقرير: r.text })));
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "التقارير القديمة");
+            XLSX.writeFile(wb, `QGuard-old-reports-${new Date().toISOString().slice(0,10)}.xlsx`);
+          } catch { /* ignore */ }
+          old.forEach(r => void deleteReportRemote(r.id));
+        }
       });
-    }, 5000); // delay 5s after startup
+    }, 5000);
     const unsubPatrol = subscribePatrolRoutes(setRemotePatrolRoutes);
     const unsubEntryLogs = subscribeEntryLogs(setRemoteEntryLogs);
     const unsubVisitors = subscribeVisitors(setRemoteVisitors);
@@ -1145,10 +1174,10 @@ export default function App() {
     const visitor: VisitorRecord = { id: `v-${Date.now()}`, guestName: payload.guestName.trim(), company: payload.company.trim(), purpose: payload.purpose.trim(), identityNumber: payload.identityNumber?.trim() ?? "", buildingId: payload.buildingId, arrivalDate: payload.arrivalDate, arrivalTime: payload.arrivalTime, createdBy: currentUser.name, createdAt: nowStamp(), passCode: generatePassCode(), status: "scheduled", reminderSent: false, preNotified: true, notes: payload.notes };
     const qrData = await generateVisitorQR(visitor.passCode, visitor.guestName).catch(() => "");
     const fullVisitor = { ...visitor, qrData };
-    const visitorAlert: AlertLog = { id: `va-${Date.now()}`, status: language === "ar" ? "إشعار زائر" : "Visitor Notice", target: language === "ar" ? "جميع الحراس" : "All Guards", text: `${visitor.guestName} - ${visitor.company} - ${visitor.arrivalDate} ${visitor.arrivalTime}`, sender: currentUser.name, time: nowStamp(), severity: "info" };
-    mutate(prev => ({ ...prev, visitors: [fullVisitor, ...prev.visitors], alerts: [visitorAlert, ...prev.alerts] }), language === "ar" ? "تمت إضافة الزائر" : "Visitor added");
+    // Add visitor without creating an alert (alerts trigger emergency siren)
+    mutate(prev => ({ ...prev, visitors: [fullVisitor, ...prev.visitors] }));
+    showToast(language === "ar" ? "✅ تمت إضافة الزائر" : "✅ Visitor added", "success");
     void saveVisitor(fullVisitor);
-    void saveAlert(visitorAlert);
     // Push visitor notification to all guards
     guardUsers.forEach(g => {
       void sendPushViaWorker(
@@ -2113,8 +2142,43 @@ export default function App() {
                       {g.breakdown.viol > 0 && <span className="text-red-400"> -{g.breakdown.viol}{language === "ar" ? "ن (مخالفات)" : "pts (viol)"}</span>}
                     </div>
                   </div>
-                  <div className="text-end flex-shrink-0">
-                    <div className="text-2xl font-black text-amber-400">{g.score}</div>
+                  <div className="text-end flex-shrink-0 flex flex-col items-end gap-1">
+                    {editingScoreGuardId === g.id ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          value={scoreAdjustInput}
+                          onChange={e => setScoreAdjustInput(e.target.value)}
+                          className="w-16 rounded-xl border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-amber-300 text-sm text-center outline-none"
+                          placeholder="0"
+                          autoFocus
+                        />
+                        <button className="rounded-xl bg-amber-500 px-2 py-1 text-xs font-black text-black" onClick={() => {
+                          const bonus = parseInt(scoreAdjustInput) || 0;
+                          const next = { ...scoreOverrides, [g.id]: bonus };
+                          setScoreOverrides(next);
+                          localStorage.setItem("mustafaqa-score-overrides", JSON.stringify(next));
+                          setEditingScoreGuardId(null);
+                          setScoreAdjustInput("");
+                          showToast(language === "ar" ? "✅ تم تعديل النقاط" : "✅ Score adjusted", "success");
+                        }}>✓</button>
+                        <button className="rounded-xl border border-white/10 px-2 py-1 text-xs text-slate-400" onClick={() => setEditingScoreGuardId(null)}>✕</button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <div className="text-2xl font-black text-amber-400">
+                          {g.score + (scoreOverrides[g.id] ?? 0)}
+                          {(scoreOverrides[g.id] ?? 0) !== 0 && (
+                            <span className={`text-sm ml-1 ${(scoreOverrides[g.id] ?? 0) > 0 ? "text-emerald-400" : "text-red-400"}`}>
+                              {(scoreOverrides[g.id] ?? 0) > 0 ? "+" : ""}{scoreOverrides[g.id]}
+                            </span>
+                          )}
+                        </div>
+                        {isOwner && (
+                          <button className="text-slate-500 hover:text-amber-400 transition text-xs" onClick={() => { setEditingScoreGuardId(g.id); setScoreAdjustInput(String(scoreOverrides[g.id] ?? 0)); }}>✏️</button>
+                        )}
+                      </div>
+                    )}
                     <div className="text-sm">{"⭐".repeat(g.stars)}</div>
                   </div>
                 </div>
@@ -2781,7 +2845,7 @@ export default function App() {
       return { date: d.toISOString().slice(0,10), label: i === 0 ? (language === "ar" ? "اليوم" : "Today") : dayNames[language][d.getDay()] };
     });
 
-    const selectedDate = visitorDayFilter === "all" ? null : (dayTabs.find(t => t.label === visitorDayFilter || t.date === visitorDayFilter)?.date ?? todayStr);
+    const selectedDate = visitorDayFilter === "all" ? null : visitorDayFilter;
 
     const filteredV = mergedVisitors.filter(v => {
       if (visitorSearch && !v.guestName.toLowerCase().includes(visitorSearch.toLowerCase()) && !v.company?.toLowerCase().includes(visitorSearch.toLowerCase())) return false;
