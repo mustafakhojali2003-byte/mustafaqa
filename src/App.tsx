@@ -207,7 +207,7 @@ function buildSeedState(): AppSnapshot {
       { id: "r1", buildingId: "gate-1", text: "حركة الدخول طبيعية وتم التحقق من الهويات.", senderId: "guard-2", senderName: "Ayman Saeed", senderEmail: "ayman@qguard", senderPhone: "0503344551", time: "2026-05-06 08:43", status: "normal" },
       { id: "r2", buildingId: "gate-1", text: "ازدحام بسيط عند البوابة تم تنظيمه.", senderId: "guard-1", senderName: "Fatuma Osman", senderEmail: "fatuma@qguard", senderPhone: "0507788991", time: "2026-05-06 08:45", status: "warning" },
     ],
-    alerts: [{ id: "a1", status: "Visitor / زائر", target: "Guards only / الحراس فقط", text: "تمت إضافة زائر مجدول لهذا اليوم.", sender: "Mustafa Khojali", time: "2026-05-05 08:15", severity: "info" }],
+    alerts: [],  // Always empty - alerts come from Firebase only
     attendance: [
       { id: "at1", userId: "guard-1", userName: "Fatuma Osman", buildingId: "gate-1", method: "manual", time: `${todayStr} 07:02` },
       { id: "at2", userId: "guard-2", userName: "Ayman Saeed", buildingId: "gate-2", method: "manual", time: `${todayStr} 07:10` },
@@ -468,13 +468,9 @@ export default function App() {
   }, [snapshot.reports, remoteReports]);
 
   const mergedAlerts = useMemo(() => {
-    // Use ONLY Firebase alerts - snapshot.alerts causes stale deleted alerts to reappear
-    if (remoteAlerts.length > 0) {
-      return [...remoteAlerts].sort((a, b) => b.time.localeCompare(a.time));
-    }
-    // Fallback to local only if Firebase not yet loaded
-    return [...snapshot.alerts].sort((a, b) => b.time.localeCompare(a.time));
-  }, [snapshot.alerts, remoteAlerts]);
+    // ONLY use Firebase - never use local snapshot.alerts (causes deleted alerts to reappear)
+    return [...remoteAlerts].sort((a, b) => b.time.localeCompare(a.time));
+  }, [remoteAlerts]);
 
   const mergedVisitors = useMemo(() => {
     const map = new Map<string, VisitorRecord>();
@@ -677,7 +673,26 @@ export default function App() {
     const unsubPending = subscribePendingUsers(setRemotePendingUsers);
     const unsubConversations = subscribeConversations(setRemoteConversations);
     const unsubReports = subscribeReports(setRemoteReports);
-    const unsubAlerts = subscribeAlerts(setRemoteAlerts);
+    const unsubAlerts = subscribeAlerts((alerts) => {
+      // Auto-cleanup: remove alerts older than 7 days from Firebase
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 7);
+      const cutoffStr = cutoff.toISOString().slice(0, 19).replace("T", " ");
+      alerts.forEach(a => {
+        if (a.time < cutoffStr) void deleteAlertRemote(a.id);
+      });
+      setRemoteAlerts(alerts.filter(a => a.time >= cutoffStr));
+    });
+
+    // Auto-cleanup reports older than 90 days (keep Firebase lean)
+    const reportCutoff = new Date();
+    reportCutoff.setDate(reportCutoff.getDate() - 90);
+    const reportCutoffStr = reportCutoff.toISOString().slice(0, 19).replace("T", " ");
+    setTimeout(() => {
+      subscribeReports(reports => {
+        reports.filter(r => r.time < reportCutoffStr).forEach(r => void deleteReportRemote(r.id));
+      });
+    }, 5000); // delay 5s after startup
     const unsubPatrol = subscribePatrolRoutes(setRemotePatrolRoutes);
     const unsubEntryLogs = subscribeEntryLogs(setRemoteEntryLogs);
     const unsubVisitors = subscribeVisitors(setRemoteVisitors);
@@ -1403,7 +1418,7 @@ export default function App() {
     };
     setActivePatrol(allDone ? null : updated);
     if (allDone) {
-      showToast(language === "ar" ? "✅ اكتملت الجولة الأمنية!" : "✅ Patrol completed!", "success");
+      showToast(language === "ar" ? "🎉 تهانينا! اكتملت جولتك الأمنية بنجاح ✅" : "🎉 Congratulations! Patrol completed successfully ✅", "success");
     } else {
       const next = updatedCheckpoints.find(cp => !cp.scannedAt);
       showToast(language === "ar" ? `✅ ${building.nameAr} · التالي: ${next?.buildingName ?? "—"}` : `✅ ${building.nameEn} · Next: ${next?.buildingName ?? "—"}`, "success");
@@ -2135,9 +2150,15 @@ export default function App() {
                 </div>
                 {myRoute.notes && <div className="text-xs text-slate-500 mt-1 italic">{myRoute.notes}</div>}
               </div>
-              <Btn onClick={() => startPatrol(myRoute)}>
-                🚶 {language === "ar" ? "ابدأ الجولة" : "Start Patrol"}
-              </Btn>
+              {activePatrol ? (
+                <Badge className="border-emerald-400/30 bg-emerald-500/15 text-emerald-300 px-3 py-1.5 text-sm">
+                  🚶 {language === "ar" ? "جارٍ..." : "In progress..."}
+                </Badge>
+              ) : (
+                <Btn onClick={() => startPatrol(myRoute)}>
+                  🚶 {language === "ar" ? "ابدأ الجولة" : "Start Patrol"}
+                </Btn>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
               {myRoute.buildingIds.map((bId, i) => {
