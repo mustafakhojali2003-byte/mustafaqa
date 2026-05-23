@@ -186,7 +186,7 @@ function buildSeedState(): AppSnapshot {
   const allPerms = Object.keys(permissionLabels);
   const users: User[] = [
     { id: "owner-1", name: "Mustafa Khojali", email: "mustafakhojali884@gmail.com", phone: "0555555555", role: "owner", status: "approved", permissions: allPerms, rating: 5, passwordHash: hashPassword("mus2003kh"), soundEnabled: true, desktopNotificationsEnabled: true, showFullToAdmin: true, createdAt: "2026-05-01 08:00", violations: 0 },
-    { id: "admin-1", name: "Abeer Al-Harbi", email: "abeer.admin@qguard", phone: "", role: "admin", status: "approved", permissions: ["reports", "alerts", "attendance", "buildings", "viewReports", "chat", "visitors", "shifts", "violations"], rating: 4.8, passwordHash: hashPassword("admin123"), soundEnabled: true, desktopNotificationsEnabled: true, showFullToAdmin: true, createdAt: "2026-05-01 08:10", violations: 0 },
+    { id: "admin-1", name: "Abeer Al-Harbi", email: "abeer.admin@qguard", phone: "", role: "admin", status: "approved", permissions: ["reports", "alerts", "attendance", "buildings", "viewReports", "chat", "visitors", "shifts"], rating: 4.8, passwordHash: hashPassword("admin123"), soundEnabled: true, desktopNotificationsEnabled: true, showFullToAdmin: true, createdAt: "2026-05-01 08:10", violations: 0 },
     { id: "guard-1", name: "Fatuma Osman", email: "fatuma@qguard", phone: "0507788991", role: "guard", status: "approved", assignedBuildingId: "gate-1", permissions: ["reports", "attendance", "chat", "buildings", "visitors", "sos"], rating: 4.9, passwordHash: hashPassword("guard123"), soundEnabled: true, desktopNotificationsEnabled: true, showFullToAdmin: false, createdAt: "2026-05-01 08:18", violations: 0 },
     { id: "guard-2", name: "Ayman Saeed", email: "ayman@qguard", phone: "0503344551", role: "guard", status: "approved", assignedBuildingId: "gate-2", permissions: ["reports", "attendance", "chat", "buildings", "visitors", "sos"], rating: 4.6, passwordHash: hashPassword("guard456"), soundEnabled: true, desktopNotificationsEnabled: false, showFullToAdmin: false, createdAt: "2026-05-01 08:20", violations: 1 },
   ];
@@ -449,7 +449,7 @@ export default function App() {
       "patrol", "settings"
     ];
     return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "attendance", "tasks", "chat", "analytics", "audit", "violations", "scores", "patrol", "system", "settings"];
-  }, [isAdmin, isGuard]);
+  }, [isAdmin, isGuard, currentUser]);
 
   // ─── Merge remote + local for ALL collections ─────────────────────────────
   const mergedReports = useMemo(() => {
@@ -2807,7 +2807,7 @@ export default function App() {
       phone: directAddForm.phone.trim(), role: directAddForm.role, status: "approved",
       assignedBuildingId: directAddForm.buildingId || undefined,
       permissions: directAddForm.role === "admin"
-        ? ["reports","alerts","attendance","buildings","viewReports","chat","visitors","shifts","violations"]
+        ? ["reports","alerts","attendance","buildings","viewReports","chat","visitors","shifts"]
         : ["reports","attendance","chat","buildings","visitors","sos"],
       rating: 4, passwordHash: hashPassword(directAddForm.password),
       soundEnabled: true, desktopNotificationsEnabled: false, showFullToAdmin: false,
