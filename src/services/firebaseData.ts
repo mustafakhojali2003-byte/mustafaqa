@@ -172,3 +172,12 @@ export const subscribePatrolRoutes = (cb: (r: PatrolRoute[]) => void) =>
 
 export const savePatrolRoute = (r: PatrolRoute) => save("patrol_routes", r.id, r);
 export const deletePatrolRouteRemote = (id: string) => remove("patrol_routes", id);
+
+// ─── Entry Logs ───────────────────────────────────────────────────────────────
+import type { EntryLog } from "../types/security";
+
+export const subscribeEntryLogs = (cb: (e: EntryLog[]) => void) =>
+  subscribe<EntryLog>("entry_logs", cb, "time");
+
+export const saveEntryLog = (e: EntryLog) => save("entry_logs", e.id, e);
+export const deleteEntryLogRemote = (id: string) => remove("entry_logs", id);

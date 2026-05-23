@@ -157,3 +157,18 @@ export interface PatrolRoute {
   sentToGuard?: boolean;   // owner must send before guard sees it
   notes?: string;
 }
+
+// ─── Entry Log (walk-in visitors) ─────────────────────────────────────────────
+export interface EntryLog {
+  id: string;
+  name: string;
+  company: string;
+  purpose: string;
+  type: "person" | "company" | "meeting" | "delivery" | "other";
+  notes?: string;
+  buildingId?: string;
+  guardId: string;
+  guardName: string;
+  time: string;
+  editedAt?: string;
+}

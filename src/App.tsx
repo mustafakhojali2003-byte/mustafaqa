@@ -3,7 +3,7 @@ import AuthScreen from "./components/AuthScreen";
 import QrScannerModal from "./components/QrScannerModal";
 import VisitorManagementModal from "./components/VisitorManagementModal";
 import { playNormalAlertSound, registerNotificationServiceWorker, sendToServiceWorker, showSystemNotification, startEmergencySound, stopEmergencySound, vibrateDevice, vibrateEmergency } from "./services/notificationService";
-import { deleteAlertRemote, deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, savePendingUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers, saveConversation, subscribeReports, saveReport, deleteReportRemote, subscribeAlerts, saveAlert, subscribeVisitors, saveVisitor, updateVisitorRemote, subscribeAttendance, saveAttendance, subscribeTasks, saveTask, updateTaskRemote, deleteTaskRemote, subscribeShifts, saveShift, updateShiftRemote, subscribeViolations, saveViolation, updateViolationRemote, subscribeSOSEvents, saveSOSEvent, updateSOSEventRemote, subscribePatrolRoutes, savePatrolRoute, deletePatrolRouteRemote } from "./services/firebaseData";
+import { deleteAlertRemote, deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, savePendingUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers, saveConversation, subscribeReports, saveReport, deleteReportRemote, subscribeAlerts, saveAlert, subscribeVisitors, saveVisitor, updateVisitorRemote, subscribeAttendance, saveAttendance, subscribeTasks, saveTask, updateTaskRemote, deleteTaskRemote, subscribeShifts, saveShift, updateShiftRemote, subscribeViolations, saveViolation, updateViolationRemote, subscribeSOSEvents, saveSOSEvent, updateSOSEventRemote, subscribePatrolRoutes, savePatrolRoute, deletePatrolRouteRemote, subscribeEntryLogs, saveEntryLog, deleteEntryLogRemote } from "./services/firebaseData";
 import { exportReportsPDF, exportShiftReportPDF, exportFullDashboardPDF } from "./services/pdfService";
 import { generateVisitorQR, generateBuildingQR } from "./services/qrService";
 import { analyzeData } from "./services/analyticsService";
@@ -11,7 +11,7 @@ import { exportFullExcel, exportAttendanceExcel, exportReportsExcel } from "./se
 import type { PatrolRound, PatrolRoute, PatrolCheckpoint } from "./types/security";
 import { initFCM, listenForegroundMessages, sendPushViaWorker } from "./services/fcmService";
 import { validateEmail } from "./services/emailVerification";
-import type { AlertLog, AppSnapshot, AttendanceRecord, AuditEntry, AuditSeverity, Building, ChatMessage, Conversation, Language, NewAccountPayload, Pair, Report, ReportComment, ReportStatus, Role, Shift, SOSEvent, Tab, Task, Toast, ToastTone, User, Violation, VisitorFormPayload, VisitorRecord } from "./types/security";
+import type { AlertLog, AppSnapshot, AttendanceRecord, AuditEntry, AuditSeverity, Building, ChatMessage, Conversation, EntryLog, Language, NewAccountPayload, Pair, Report, ReportComment, ReportStatus, Role, Shift, SOSEvent, Tab, Task, Toast, ToastTone, User, Violation, VisitorFormPayload, VisitorRecord } from "./types/security";
 
 const STORAGE_KEY = "mustafaqa-v1";
 const SESSION_KEY = "mustafaqa-session-v1";
@@ -305,6 +305,14 @@ export default function App() {
   const [remoteSOSEvents, setRemoteSOSEvents] = useState<SOSEvent[]>([]);
   const [notificationPermission, setNotificationPermission] = useState("default");
   const [visitorModalOpen, setVisitorModalOpen] = useState(false);
+  const [editingVisitorId, setEditingVisitorId] = useState<string | null>(null);
+  const [visitorDayFilter, setVisitorDayFilter] = useState<string>("today");
+  const [multipleVisitors, setMultipleVisitors] = useState(false);
+  const [remoteEntryLogs, setRemoteEntryLogs] = useState<EntryLog[]>([]);
+  const [entryLogForm, setEntryLogForm] = useState({ name: "", company: "", purpose: "", notes: "", type: "person" as "person"|"company"|"meeting" });
+  const [showEntryLogForm, setShowEntryLogForm] = useState(false);
+  const [editingEntryLogId, setEditingEntryLogId] = useState<string | null>(null);
+  const [activeVisitorTab, setActiveVisitorTab] = useState<"visitors"|"entrylog">("visitors");
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [qrContext, setQrContext] = useState<"attendance" | "report" | "patrol" | null>(null);
   const [visitorSearch, setVisitorSearch] = useState("");
@@ -671,6 +679,7 @@ export default function App() {
     const unsubReports = subscribeReports(setRemoteReports);
     const unsubAlerts = subscribeAlerts(setRemoteAlerts);
     const unsubPatrol = subscribePatrolRoutes(setRemotePatrolRoutes);
+    const unsubEntryLogs = subscribeEntryLogs(setRemoteEntryLogs);
     const unsubVisitors = subscribeVisitors(setRemoteVisitors);
     const unsubAttendance = subscribeAttendance(setRemoteAttendance);
     const unsubTasks = subscribeTasks(setRemoteTasks);
@@ -2739,81 +2748,285 @@ export default function App() {
     </div>
   );
 
-  const renderVisitors = () => (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <SectionHead title={language === "ar" ? "الزوار" : "Visitors"} />
-        {(isOwner || isAdmin) && <Btn onClick={() => setVisitorModalOpen(true)}>+ {language === "ar" ? "إضافة زائر" : "Add Visitor"}</Btn>}
-      </div>
-      <div className="flex flex-wrap gap-3">
-        <TxtInput className="max-w-xs" placeholder={language === "ar" ? "بحث..." : "Search..."} value={visitorSearch} onChange={e => setVisitorSearch(e.target.value)} />
-        <SelInput className="w-40" value={visitorStatusFilter} onChange={e => setVisitorStatusFilter(e.target.value as VisitorRecord["status"] | "all")}>
-          <option value="all">{language === "ar" ? "الكل" : "All"}</option>
-          {(["scheduled", "arrived", "departed", "cancelled"] as const).map(s => <option key={s} value={s}>{s}</option>)}
-        </SelInput>
-      </div>
-      <div className="space-y-3">
-        {filteredVisitors.length === 0 ? <EmptyMsg title={language === "ar" ? "لا زوار" : "No Visitors"} text="" /> : filteredVisitors.map(v => (
-          <Panel key={v.id}>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex-1 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-black text-white">{v.guestName}</span>
-                  <Badge className={v.status === "arrived" ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : v.status === "cancelled" ? "border-red-400/30 bg-red-500/15 text-red-300" : "border-amber-400/30 bg-amber-500/15 text-amber-300"}>{v.status}</Badge>
-                </div>
-                <div className="grid gap-2 text-sm sm:grid-cols-3">
-                  <InfoRow label={language === "ar" ? "الشركة" : "Company"} value={v.company} />
-                  <InfoRow label={language === "ar" ? "الوصول" : "Arrival"} value={`${v.arrivalDate} ${v.arrivalTime}`} />
-                  <InfoRow label={language === "ar" ? "رمز الدخول" : "Pass Code"} value={v.passCode} />
-                </div>
-              </div>
-              {v.qrData && (
-                <div className="flex-shrink-0">
-                  <img src={v.qrData} alt="QR" className="h-20 w-20 rounded-xl" />
-                </div>
-              )}
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {v.status === "scheduled" && (isOwner || isAdmin) && <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => { mutate(prev => ({ ...prev, visitors: prev.visitors.map(x => x.id === v.id ? { ...x, status: "arrived", checkInTime: nowStamp() } : x) }), language === "ar" ? "وصل الزائر" : "Visitor arrived"); void updateVisitorRemote(v.id, { status: "arrived", checkInTime: nowStamp() }); }}>{language === "ar" ? "وصل" : "Arrived"}</Btn>}
-              {v.status === "arrived" && (isOwner || isAdmin) && <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => { mutate(prev => ({ ...prev, visitors: prev.visitors.map(x => x.id === v.id ? { ...x, status: "departed", checkOutTime: nowStamp() } : x) }), language === "ar" ? "غادر الزائر" : "Visitor departed"); void updateVisitorRemote(v.id, { status: "departed", checkOutTime: nowStamp() }); }}>{language === "ar" ? "غادر" : "Departed"}</Btn>}
-              {v.status === "scheduled" && (isOwner || isAdmin) && <Btn variant="danger" className="h-8 px-3 text-xs" onClick={() => { mutate(prev => ({ ...prev, visitors: prev.visitors.map(x => x.id === v.id ? { ...x, status: "cancelled" } : x) }), language === "ar" ? "تم الإلغاء" : "Cancelled"); void updateVisitorRemote(v.id, { status: "cancelled" }); }}>{language === "ar" ? "إلغاء" : "Cancel"}</Btn>}
-            </div>
-          </Panel>
-        ))}
-      </div>
-    </div>
-  );
+  const renderVisitors = () => {
+    // ── Day groups ──────────────────────────────────────────────────────────
+    const dayNames = { ar: ["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"], en: ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"] };
+    const todayStr = new Date().toISOString().slice(0,10);
+    const todayDay = new Date().getDay();
 
-  const saveUserEdit = (userId: string) => {
-    const u = approvedUsers.find(x => x.id === userId);
-    if (!u) return;
-    const updated = { ...u, name: editUserForm.name || u.name, phone: editUserForm.phone || u.phone, assignedBuildingId: editUserForm.buildingId || u.assignedBuildingId, role: editUserForm.role };
-    mutate(prev => ({ ...prev, users: prev.users.map(x => x.id === userId ? updated : x) }), language === "ar" ? "تم تحديث البيانات" : "Updated");
-    void saveApprovedUser(updated);
-    setEditUserId(null);
-  };
+    // Build day tabs: today + next 6 days
+    const dayTabs = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(); d.setDate(d.getDate() + i);
+      return { date: d.toISOString().slice(0,10), label: i === 0 ? (language === "ar" ? "اليوم" : "Today") : dayNames[language][d.getDay()] };
+    });
 
-  const addUserDirectly = (e: FormEvent) => {
-    e.preventDefault();
-    if (!directAddForm.name.trim() || !directAddForm.email.trim() || !directAddForm.password.trim()) return;
-    const emailCheck = validateEmail(directAddForm.email);
-    if (!emailCheck.valid) { showToast(language === "ar" ? (emailCheck.errorAr ?? "بريد غير صحيح") : (emailCheck.errorEn ?? "Invalid email"), "danger"); return; }
-    if (approvedUsers.some(u => u.email.toLowerCase() === directAddForm.email.trim().toLowerCase())) { showToast(language === "ar" ? "البريد مستخدم بالفعل" : "Email already exists", "danger"); return; }
-    const newUser: User = {
-      id: `user-${Date.now()}`, name: directAddForm.name.trim(), email: directAddForm.email.trim(),
-      phone: directAddForm.phone.trim(), role: directAddForm.role, status: "approved",
-      assignedBuildingId: directAddForm.buildingId || undefined,
-      permissions: directAddForm.role === "admin"
-        ? ["reports","alerts","attendance","buildings","viewReports","chat","visitors","shifts"]
-        : ["reports","attendance","chat","buildings","visitors","sos"],
-      rating: 4, passwordHash: hashPassword(directAddForm.password),
-      soundEnabled: true, desktopNotificationsEnabled: false, showFullToAdmin: false,
-      createdAt: nowStamp(), violations: 0,
-    };
-    void saveApprovedUser(newUser);
-    mutate(prev => ({ ...prev, users: [newUser, ...prev.users], auditLog: [createAuditEntry(currentUser, "direct_add_user", newUser.email, `تمت إضافة ${newUser.name} مباشرة`, "info"), ...prev.auditLog] }), language === "ar" ? "✅ تمت إضافة المستخدم" : "✅ User added");
-    setDirectAddForm({ name: "", email: "", phone: "", password: "", role: "guard", buildingId: "" });
-    setShowAddUserForm(false);
+    const selectedDate = visitorDayFilter === "all" ? null : (dayTabs.find(t => t.label === visitorDayFilter || t.date === visitorDayFilter)?.date ?? todayStr);
+
+    const filteredV = mergedVisitors.filter(v => {
+      if (visitorSearch && !v.guestName.toLowerCase().includes(visitorSearch.toLowerCase()) && !v.company?.toLowerCase().includes(visitorSearch.toLowerCase())) return false;
+      if (visitorStatusFilter !== "all" && v.status !== visitorStatusFilter) return false;
+      if (selectedDate) return v.arrivalDate === selectedDate;
+      return true;
+    });
+
+    const statusColor = (s: string) => s === "arrived" ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : s === "departed" ? "border-sky-400/30 bg-sky-500/15 text-sky-300" : s === "cancelled" ? "border-red-400/30 bg-red-500/15 text-red-300" : "border-amber-400/30 bg-amber-500/15 text-amber-300";
+    const statusLabel: Record<string, string> = { scheduled: language === "ar" ? "مجدول" : "Scheduled", arrived: language === "ar" ? "وصل" : "Arrived", departed: language === "ar" ? "غادر" : "Departed", cancelled: language === "ar" ? "ملغي" : "Cancelled" };
+
+    return (
+      <div className="space-y-5">
+        {/* Header */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <SectionHead title={language === "ar" ? "الزوار" : "Visitors"} />
+          <div className="flex gap-2">
+            <Btn onClick={() => setVisitorModalOpen(true)}>+ {language === "ar" ? "إضافة زائر" : "Add Visitor"}</Btn>
+          </div>
+        </div>
+
+        {/* Tab switcher: Visitors | Entry Log */}
+        <div className="flex rounded-xl border border-white/10 overflow-hidden w-fit">
+          <button onClick={() => setActiveVisitorTab("visitors")} className={`px-5 py-2 text-sm font-bold transition ${activeVisitorTab === "visitors" ? "bg-amber-500 text-black" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>
+            👥 {language === "ar" ? "الزوار" : "Visitors"}
+          </button>
+          <button onClick={() => setActiveVisitorTab("entrylog")} className={`px-5 py-2 text-sm font-bold transition ${activeVisitorTab === "entrylog" ? "bg-amber-500 text-black" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>
+            📋 {language === "ar" ? "سجل الدخول" : "Entry Log"}
+          </button>
+        </div>
+
+        {/* ══ VISITORS TAB ══ */}
+        {activeVisitorTab === "visitors" && (
+          <div className="space-y-4">
+            {/* Day tabs */}
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+              <button onClick={() => setVisitorDayFilter("all")}
+                className={`flex-shrink-0 rounded-2xl border px-4 py-2 text-xs font-bold transition ${visitorDayFilter === "all" ? "border-amber-400/50 bg-amber-500/15 text-amber-300" : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>
+                {language === "ar" ? "الكل" : "All"}
+              </button>
+              {dayTabs.map(tab => (
+                <button key={tab.date} onClick={() => setVisitorDayFilter(tab.date)}
+                  className={`flex-shrink-0 rounded-2xl border px-4 py-2 text-xs font-bold transition ${visitorDayFilter === tab.date ? "border-amber-400/50 bg-amber-500/15 text-amber-300" : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>
+                  {tab.label}
+                  <span className="ml-1.5 opacity-60 text-[10px]">
+                    {mergedVisitors.filter(v => v.arrivalDate === tab.date).length}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Search + status filter */}
+            <div className="flex flex-wrap gap-2">
+              <TxtInput className="max-w-xs" placeholder={language === "ar" ? "🔍 بحث..." : "🔍 Search..."} value={visitorSearch} onChange={e => setVisitorSearch(e.target.value)} />
+              <SelInput className="w-40" value={visitorStatusFilter} onChange={e => setVisitorStatusFilter(e.target.value as VisitorRecord["status"] | "all")}>
+                <option value="all">{language === "ar" ? "الكل" : "All"}</option>
+                {(["scheduled","arrived","departed","cancelled"] as const).map(s => <option key={s} value={s}>{statusLabel[s]}</option>)}
+              </SelInput>
+            </div>
+
+            {/* List */}
+            <div className="space-y-3">
+              {filteredV.length === 0
+                ? <EmptyMsg title={language === "ar" ? "لا زوار في هذا اليوم" : "No visitors"} text="" />
+                : filteredV.map(v => {
+                  const isEditing = editingVisitorId === v.id;
+                  return (
+                    <Panel key={v.id}>
+                      {isEditing ? (
+                        <div className="space-y-3">
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div><Lbl>{language === "ar" ? "الاسم" : "Name"}</Lbl><TxtInput defaultValue={v.guestName} id={`ev-name-${v.id}`} /></div>
+                            <div><Lbl>{language === "ar" ? "الشركة" : "Company"}</Lbl><TxtInput defaultValue={v.company} id={`ev-co-${v.id}`} /></div>
+                            <div><Lbl>{language === "ar" ? "الغرض" : "Purpose"}</Lbl><TxtInput defaultValue={v.purpose} id={`ev-pur-${v.id}`} /></div>
+                            <div><Lbl>{language === "ar" ? "تاريخ الوصول" : "Arrival Date"}</Lbl><TxtInput type="date" defaultValue={v.arrivalDate} id={`ev-date-${v.id}`} /></div>
+                            <div><Lbl>{language === "ar" ? "وقت الوصول" : "Arrival Time"}</Lbl><TxtInput type="time" defaultValue={v.arrivalTime} id={`ev-time-${v.id}`} /></div>
+                            <div><Lbl>{language === "ar" ? "الحالة" : "Status"}</Lbl>
+                              <SelInput defaultValue={v.status} id={`ev-status-${v.id}`}>
+                                {(["scheduled","arrived","departed","cancelled"] as const).map(s => <option key={s} value={s}>{statusLabel[s]}</option>)}
+                              </SelInput>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Btn onClick={() => {
+                              const updated: VisitorRecord = {
+                                ...v,
+                                guestName: (document.getElementById(`ev-name-${v.id}`) as HTMLInputElement)?.value || v.guestName,
+                                company: (document.getElementById(`ev-co-${v.id}`) as HTMLInputElement)?.value || v.company,
+                                purpose: (document.getElementById(`ev-pur-${v.id}`) as HTMLInputElement)?.value || v.purpose,
+                                arrivalDate: (document.getElementById(`ev-date-${v.id}`) as HTMLInputElement)?.value || v.arrivalDate,
+                                arrivalTime: (document.getElementById(`ev-time-${v.id}`) as HTMLInputElement)?.value || v.arrivalTime,
+                                status: ((document.getElementById(`ev-status-${v.id}`) as HTMLSelectElement)?.value || v.status) as VisitorRecord["status"],
+                              };
+                              void saveVisitor(updated);
+                              mutate(prev => ({ ...prev, visitors: prev.visitors.map(x => x.id === v.id ? updated : x) }));
+                              setEditingVisitorId(null);
+                              showToast(language === "ar" ? "✅ تم التحديث" : "✅ Updated", "success");
+                            }}>💾 {language === "ar" ? "حفظ" : "Save"}</Btn>
+                            <Btn variant="secondary" onClick={() => setEditingVisitorId(null)}>{language === "ar" ? "إلغاء" : "Cancel"}</Btn>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="flex-1 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-black text-white">{v.guestName}</span>
+                              <Badge className={statusColor(v.status)}>{statusLabel[v.status]}</Badge>
+                            </div>
+                            <div className="grid gap-1 text-xs text-slate-400 sm:grid-cols-3">
+                              {v.company && <span>🏢 {v.company}</span>}
+                              {v.purpose && <span>📝 {v.purpose}</span>}
+                              <span>📅 {v.arrivalDate} {v.arrivalTime}</span>
+                              {v.buildingId && <span>🏛 {snapshot.buildings.find(b => b.id === v.buildingId)?.[language === "ar" ? "nameAr" : "nameEn"] ?? v.buildingId}</span>}
+                              {v.passCode && <span>🔑 {v.passCode}</span>}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {/* Status actions */}
+                            {v.status === "scheduled" && (
+                              <Btn variant="secondary" className="h-8 px-3 text-xs border-emerald-500/30 text-emerald-300"
+                                onClick={() => { const u = { ...v, status: "arrived" as const, checkInTime: nowStamp() }; void saveVisitor(u); mutate(prev => ({ ...prev, visitors: prev.visitors.map(x => x.id === v.id ? u : x) })); }}>
+                                ✅ {language === "ar" ? "وصل" : "Arrived"}
+                              </Btn>
+                            )}
+                            {v.status === "arrived" && (
+                              <Btn variant="secondary" className="h-8 px-3 text-xs border-sky-500/30 text-sky-300"
+                                onClick={() => { const u = { ...v, status: "departed" as const, checkOutTime: nowStamp() }; void saveVisitor(u); mutate(prev => ({ ...prev, visitors: prev.visitors.map(x => x.id === v.id ? u : x) })); }}>
+                                🚶 {language === "ar" ? "غادر" : "Departed"}
+                              </Btn>
+                            )}
+                            {/* Edit */}
+                            <Btn variant="secondary" className="h-8 px-3 text-xs"
+                              onClick={() => setEditingVisitorId(v.id)}>
+                              ✏️ {language === "ar" ? "تعديل" : "Edit"}
+                            </Btn>
+                            {/* Delete */}
+                            {(isOwner || isAdmin) && (
+                              <Btn variant="danger" className="h-8 px-3 text-xs"
+                                onClick={() => { void deleteVisitorRemote(v.id); mutate(prev => ({ ...prev, visitors: prev.visitors.filter(x => x.id !== v.id) })); showToast(language === "ar" ? "🗑 حُذف" : "🗑 Deleted", "info"); }}>
+                                🗑
+                              </Btn>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </Panel>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+
+        {/* ══ ENTRY LOG TAB ══ */}
+        {activeVisitorTab === "entrylog" && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <div className="text-sm text-slate-400">{language === "ar" ? "سجل الداخلين للمركز" : "Facility entry log"}</div>
+              <Btn onClick={() => { setEntryLogForm({ name: "", company: "", purpose: "", notes: "", type: "person" }); setShowEntryLogForm(true); setEditingEntryLogId(null); }}>
+                + {language === "ar" ? "إضافة سجل" : "Add Entry"}
+              </Btn>
+            </div>
+
+            {/* Add/Edit form */}
+            {showEntryLogForm && (
+              <Panel className="border-amber-400/20">
+                <div className="mb-3 font-bold text-amber-300">{editingEntryLogId ? (language === "ar" ? "تعديل السجل" : "Edit Entry") : (language === "ar" ? "إضافة سجل دخول" : "Add Entry Log")}</div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div><Lbl>{language === "ar" ? "الاسم / الجهة" : "Name / Entity"}</Lbl>
+                    <TxtInput value={entryLogForm.name} onChange={e => setEntryLogForm(p => ({ ...p, name: e.target.value }))} placeholder={language === "ar" ? "اسم الشخص أو الجهة" : "Person or entity name"} />
+                  </div>
+                  <div><Lbl>{language === "ar" ? "النوع" : "Type"}</Lbl>
+                    <SelInput value={entryLogForm.type} onChange={e => setEntryLogForm(p => ({ ...p, type: e.target.value as EntryLog["type"] }))}>
+                      <option value="person">{language === "ar" ? "شخص" : "Person"}</option>
+                      <option value="company">{language === "ar" ? "شركة / جهة" : "Company"}</option>
+                      <option value="meeting">{language === "ar" ? "اجتماع" : "Meeting"}</option>
+                      <option value="delivery">{language === "ar" ? "توصيل" : "Delivery"}</option>
+                      <option value="other">{language === "ar" ? "أخرى" : "Other"}</option>
+                    </SelInput>
+                  </div>
+                  <div><Lbl>{language === "ar" ? "الشركة / المؤسسة" : "Company"}</Lbl>
+                    <TxtInput value={entryLogForm.company} onChange={e => setEntryLogForm(p => ({ ...p, company: e.target.value }))} placeholder={language === "ar" ? "اختياري" : "Optional"} />
+                  </div>
+                  <div><Lbl>{language === "ar" ? "الغرض" : "Purpose"}</Lbl>
+                    <TxtInput value={entryLogForm.purpose} onChange={e => setEntryLogForm(p => ({ ...p, purpose: e.target.value }))} placeholder={language === "ar" ? "سبب الزيارة" : "Reason for visit"} />
+                  </div>
+                  <div className="sm:col-span-2"><Lbl>{language === "ar" ? "ملاحظات" : "Notes"}</Lbl>
+                    <TxtInput value={entryLogForm.notes} onChange={e => setEntryLogForm(p => ({ ...p, notes: e.target.value }))} placeholder={language === "ar" ? "أي معلومات إضافية" : "Additional info"} />
+                  </div>
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Btn onClick={() => {
+                    if (!entryLogForm.name.trim()) { showToast(language === "ar" ? "أدخل الاسم" : "Enter name", "danger"); return; }
+                    const entry: EntryLog = {
+                      id: editingEntryLogId ?? `el-${Date.now()}`,
+                      name: entryLogForm.name.trim(),
+                      company: entryLogForm.company.trim(),
+                      purpose: entryLogForm.purpose.trim(),
+                      type: entryLogForm.type,
+                      notes: entryLogForm.notes.trim() || undefined,
+                      guardId: currentUser?.id ?? "",
+                      guardName: currentUser?.name ?? "",
+                      time: editingEntryLogId ? (remoteEntryLogs.find(e => e.id === editingEntryLogId)?.time ?? nowStamp()) : nowStamp(),
+                      editedAt: editingEntryLogId ? nowStamp() : undefined,
+                    };
+                    void saveEntryLog(entry);
+                    setRemoteEntryLogs(prev => editingEntryLogId ? prev.map(e => e.id === editingEntryLogId ? entry : e) : [entry, ...prev]);
+                    setShowEntryLogForm(false);
+                    setEditingEntryLogId(null);
+                    setEntryLogForm({ name: "", company: "", purpose: "", notes: "", type: "person" });
+                    showToast(language === "ar" ? "✅ تم الحفظ" : "✅ Saved", "success");
+                  }}>{editingEntryLogId ? (language === "ar" ? "💾 تحديث" : "💾 Update") : (language === "ar" ? "✅ إضافة" : "✅ Add")}</Btn>
+                  <Btn variant="secondary" onClick={() => { setShowEntryLogForm(false); setEditingEntryLogId(null); }}>{language === "ar" ? "إلغاء" : "Cancel"}</Btn>
+                </div>
+              </Panel>
+            )}
+
+            {/* Entry log list */}
+            <div className="space-y-2">
+              {remoteEntryLogs.length === 0
+                ? <EmptyMsg title={language === "ar" ? "لا سجلات بعد" : "No entries yet"} text="" />
+                : remoteEntryLogs.map(e => {
+                  const typeIcon: Record<string, string> = { person: "👤", company: "🏢", meeting: "🤝", delivery: "📦", other: "📌" };
+                  const typeLabel: Record<string, string> = { person: language === "ar" ? "شخص" : "Person", company: language === "ar" ? "شركة" : "Company", meeting: language === "ar" ? "اجتماع" : "Meeting", delivery: language === "ar" ? "توصيل" : "Delivery", other: language === "ar" ? "أخرى" : "Other" };
+                  return (
+                    <Panel key={e.id}>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">{typeIcon[e.type]}</span>
+                            <span className="font-black text-white">{e.name}</span>
+                            <Badge className="border-slate-400/20 bg-slate-500/10 text-slate-400 text-xs">{typeLabel[e.type]}</Badge>
+                          </div>
+                          <div className="flex flex-wrap gap-3 text-xs text-slate-400">
+                            {e.company && <span>🏛 {e.company}</span>}
+                            {e.purpose && <span>📝 {e.purpose}</span>}
+                            <span>🕐 {e.time.slice(11,16)} · {e.time.slice(0,10)}</span>
+                            <span>👮 {e.guardName}</span>
+                            {e.editedAt && <span className="text-slate-600">{language === "ar" ? "✏️ معدّل" : "✏️ edited"}</span>}
+                          </div>
+                          {e.notes && <div className="text-xs text-slate-500 italic">{e.notes}</div>}
+                        </div>
+                        <div className="flex gap-2">
+                          {(isOwner || isAdmin || e.guardId === currentUser?.id) && (
+                            <button
+                              className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/10"
+                              onClick={() => { setEntryLogForm({ name: e.name, company: e.company, purpose: e.purpose, notes: e.notes ?? "", type: e.type }); setEditingEntryLogId(e.id); setShowEntryLogForm(true); }}>
+                              ✏️
+                            </button>
+                          )}
+                          {(isOwner || isAdmin || e.guardId === currentUser?.id) && (
+                            <button
+                              className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-1.5 text-xs font-bold text-red-400 hover:bg-red-500/20"
+                              onClick={() => { void deleteEntryLogRemote(e.id); setRemoteEntryLogs(prev => prev.filter(x => x.id !== e.id)); showToast(language === "ar" ? "🗑 حُذف" : "🗑 Deleted", "info"); }}>
+                              🗑
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </Panel>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const renderUsers = () => {
