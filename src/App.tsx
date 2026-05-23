@@ -524,12 +524,9 @@ export default function App() {
   }, [snapshot.attendance, remoteAttendance]);
 
   const mergedTasks = useMemo(() => {
-    // Prefer Firebase tasks - local snapshot.tasks may have stale seed data
-    if (remoteTasks.length > 0) {
-      return [...remoteTasks].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    }
-    return [...snapshot.tasks].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [snapshot.tasks, remoteTasks]);
+    // Firebase only - no local fallback (snapshot.tasks has wrong guard IDs)
+    return [...remoteTasks].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }, [remoteTasks]);
 
   const mergedShifts = useMemo(() => {
     const map = new Map<string, Shift>();
@@ -1501,15 +1498,14 @@ export default function App() {
         void savePatrolRoute(updatedRoute);
         setRemotePatrolRoutes(prev => prev.map(r => r.id === completedRoute.id ? updatedRoute : r));
         // Notify owner when patrol is completed
-        const ownerUser = approvedUsers.find(u => u.role === "owner");
-        if (ownerUser) {
-          void sendPushViaWorker(
-            language === "ar" ? `✅ جولة مكتملة — ${currentUser?.name}` : `✅ Patrol Completed — ${currentUser?.name}`,
-            language === "ar" ? `${completedRoute.nameAr} · ${nowStamp().slice(11,16)}` : `${completedRoute.name} · ${nowStamp().slice(11,16)}`,
-            "task",
-            ownerUser.id
-          );
-        }
+        // Notify owner AND admins when patrol is completed
+        const supervisors = approvedUsers.filter(u => u.role === "owner" || u.role === "admin");
+        supervisors.forEach(supervisor => void sendPushViaWorker(
+          language === "ar" ? `✅ جولة مكتملة — ${currentUser?.name}` : `✅ Patrol Completed — ${currentUser?.name}`,
+          language === "ar" ? `${completedRoute.nameAr} · ${nowStamp().slice(11,16)}` : `${completedRoute.name} · ${nowStamp().slice(11,16)}`,
+          "task",
+          supervisor.id
+        ));
       }
       showToast(language === "ar" ? "🎉 تهانينا! اكتملت جولتك الأمنية بنجاح ✅" : "🎉 Congratulations! Patrol completed successfully ✅", "success");
     } else {
@@ -4528,7 +4524,15 @@ export default function App() {
         </Panel>
       )}
       <div className="space-y-3">
-        {visibleTasks.length === 0 ? <EmptyMsg title={language === "ar" ? "لا مهام" : "No Tasks"} text="" /> : visibleTasks.map(t => (
+        {visibleTasks.length === 0 ? <EmptyMsg title={language === "ar" ? "لا مهام" : "No Tasks"} text="" /> : (() => {
+          const pending = visibleTasks.filter(t => t.status !== "done");
+          const done = visibleTasks.filter(t => t.status === "done");
+          return (
+            <>
+              {pending.length === 0 && done.length > 0 && (
+                <div className="text-center text-sm text-slate-500 py-2">{language === "ar" ? "✅ جميع المهام مكتملة" : "✅ All tasks completed"}</div>
+              )}
+              {[...pending, ...done].map(t => (
           <Panel key={t.id}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -4541,7 +4545,8 @@ export default function App() {
               </div>
               <div className="flex items-center gap-2">
                 <Badge className={t.status === "done" ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : "border-amber-400/30 bg-amber-500/15 text-amber-300"}>{t.status}</Badge>
-                {t.requiresProof && <Badge className="border-sky-400/30 bg-sky-500/10 text-sky-300 text-[10px]">📸 {language === "ar" ? "يتطلب إثبات" : "Proof req."}</Badge>}
+                {t.requiresProof && !t.proofImageUrl && <Badge className="border-sky-400/30 bg-sky-500/10 text-sky-300 text-[10px]">📸 {language === "ar" ? "يتطلب إثبات" : "Proof req."}</Badge>}
+                {t.requiresProof && t.proofImageUrl && <Badge className="border-emerald-400/30 bg-emerald-500/10 text-emerald-300 text-[10px]">📸 {language === "ar" ? "تم الإثبات" : "Proof ✓"}</Badge>}
                 {t.status !== "done" && (isGuard || isOwner || isAdmin) && (
                   t.requiresProof && !t.proofImageUrl ? (
                     <div className="flex items-center gap-2">
@@ -4583,6 +4588,14 @@ export default function App() {
                           setRemoteTasks(prev => prev.map(x => x.id === t.id ? { ...x, status: "done" } : x));
                           mutate(prev => ({ ...prev, tasks: prev.tasks.map(x => x.id === t.id ? { ...x, status: "done" } : x) }));
                           void updateTaskRemote(t.id, { status: "done" });
+                          // Notify owner and admins of task completion
+                          const notifyUsers = approvedUsers.filter(u => u.role === "owner" || u.role === "admin");
+                          notifyUsers.forEach(u => void sendPushViaWorker(
+                            language === "ar" ? `✅ مهمة مكتملة — ${currentUser?.name}` : `✅ Task Done — ${currentUser?.name}`,
+                            t.title,
+                            "task",
+                            u.id
+                          ));
                           showToast(language === "ar" ? "✅ تم الإنجاز" : "✅ Done", "success");
                         }}>✅ {language === "ar" ? "إنجاز" : "Complete"}</Btn>
                     </div>
@@ -4591,7 +4604,10 @@ export default function App() {
               </div>
             </div>
           </Panel>
-        ))}
+          ))}
+            </>
+          );
+        })()}
       </div>
     </div>
   );
