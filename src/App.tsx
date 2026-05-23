@@ -460,10 +460,12 @@ export default function App() {
   }, [snapshot.reports, remoteReports]);
 
   const mergedAlerts = useMemo(() => {
-    const map = new Map<string, AlertLog>();
-    snapshot.alerts.forEach(a => map.set(a.id, a));
-    remoteAlerts.forEach(a => map.set(a.id, a));
-    return Array.from(map.values()).sort((a, b) => b.time.localeCompare(a.time));
+    // Use ONLY Firebase alerts - snapshot.alerts causes stale deleted alerts to reappear
+    if (remoteAlerts.length > 0) {
+      return [...remoteAlerts].sort((a, b) => b.time.localeCompare(a.time));
+    }
+    // Fallback to local only if Firebase not yet loaded
+    return [...snapshot.alerts].sort((a, b) => b.time.localeCompare(a.time));
   }, [snapshot.alerts, remoteAlerts]);
 
   const mergedVisitors = useMemo(() => {
@@ -2715,8 +2717,10 @@ export default function App() {
                   {/* Delete - owner or sender */}
                   {(isOwner || r.senderId === currentUser?.id) && (
                     <Btn variant="danger" className="h-8 px-3 text-xs ms-auto" onClick={() => {
-                      mutate(prev => ({ ...prev, reports: prev.reports.filter(x => x.id !== r.id) }), language === "ar" ? "تم الحذف" : "Deleted");
+                      // Delete from Firebase → removes for ALL users instantly
                       void deleteReportRemote(r.id);
+                      mutate(prev => ({ ...prev, reports: prev.reports.filter(x => x.id !== r.id) }));
+                      showToast(language === "ar" ? "🗑 تم الحذف" : "🗑 Deleted", "info");
                     }}>🗑 {language === "ar" ? "حذف" : "Delete"}</Btn>
                   )}
                 </div>
@@ -2922,7 +2926,8 @@ export default function App() {
             const secNum = securityNumber(u.id);
             const assignedBuilding = snapshot.buildings.find(b => b.id === u.assignedBuildingId);
             // Admin sees limited data for guards
-            const canSeeFullData = isOwner || u.showFullToAdmin || u.role !== "guard";
+            // Admin sees only name + security number for guards (privacy)
+            const canSeeFullData = isOwner || (isAdmin && u.role !== "guard");
 
             return (
               <Panel key={u.id} className={isOnlineUser ? "border-emerald-500/20" : ""}>
