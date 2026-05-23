@@ -331,6 +331,9 @@ export default function App() {
   const [newRouteNotes, setNewRouteNotes] = useState("");
   const [qrModalBuilding, setQrModalBuilding] = useState<string | null>(null);
   const [stoppedAlertIds, setStoppedAlertIds] = useState<Set<string>>(new Set());
+  const [hiddenAlertIds, setHiddenAlertIds] = useState<Set<string>>(
+    () => new Set(JSON.parse(localStorage.getItem("mustafaqa-hidden-alerts") ?? "[]") as string[])
+  );
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [deletedUserIds, setDeletedUserIds] = useState<Set<string>>(new Set());
   const [pendingUserId, setPendingUserId] = useState<string | null>(() => window.localStorage.getItem("mustafaqa-pending-id") || null);
@@ -390,6 +393,7 @@ export default function App() {
     notes: "",
   });
   const [showShiftScheduler, setShowShiftScheduler] = useState(false);
+  const [scoresPeriod, setScoresPeriod] = useState<"today"|"week"|"month"|"all">("all");
   const [attendanceFilter, setAttendanceFilter] = useState<"today"|"week"|"month"|"all">("today");
   const [attendanceSearch, setAttendanceSearch] = useState("");
   const [attendanceView, setAttendanceView] = useState<"list"|"grid">("list");
@@ -2091,7 +2095,8 @@ export default function App() {
       {isGuard && currentUser && (() => {
         // Merge remote (Firebase) + local routes, deduplicate by id
       const allRoutes = [...remotePatrolRoutes, ...patrolRoutes]
-        .filter((r, i, arr) => arr.findIndex(x => x.id === r.id) === i);
+        .filter((r, i, arr) => arr.findIndex(x => x.id === r.id) === i)
+        .filter(r => r.sentToGuard === true);  // Guard only sees routes sent to them
       const myRoute = allRoutes.find(r =>
         (r.assignedGuardId === currentUser.id || r.assignedGuardId === currentUser.email) &&
         r.active !== false
@@ -3645,13 +3650,11 @@ export default function App() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="font-black text-white">{language === "ar" ? "سجل الحضور" : "Attendance Log"}</div>
           <div className="flex flex-wrap gap-2 items-center">
-            {/* View toggle */}
-            {!isGuard && (
-              <div className="flex rounded-xl border border-white/10 overflow-hidden">
-                <button onClick={() => setAttendanceView("list")} className={`px-3 py-1.5 text-xs font-bold transition ${attendanceView === "list" ? "bg-amber-500 text-black" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>☰ {language === "ar" ? "قائمة" : "List"}</button>
-                <button onClick={() => setAttendanceView("grid")} className={`px-3 py-1.5 text-xs font-bold transition ${attendanceView === "grid" ? "bg-amber-500 text-black" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>⊞ {language === "ar" ? "جدول" : "Grid"}</button>
-              </div>
-            )}
+            {/* View toggle - for everyone */}
+            <div className="flex rounded-xl border border-white/10 overflow-hidden">
+              <button onClick={() => setAttendanceView("list")} className={`px-3 py-1.5 text-xs font-bold transition ${attendanceView === "list" ? "bg-amber-500 text-black" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>☰ {language === "ar" ? "قائمة" : "List"}</button>
+              <button onClick={() => setAttendanceView("grid")} className={`px-3 py-1.5 text-xs font-bold transition ${attendanceView === "grid" ? "bg-amber-500 text-black" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>⊞ {language === "ar" ? "جدول" : "Grid"}</button>
+            </div>
             {/* Date filter */}
             {(["today","week","month","all"] as const).map(f => (
               <button key={f} onClick={() => setAttendanceFilter(f)}

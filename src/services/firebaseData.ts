@@ -163,3 +163,12 @@ export const subscribeSOSEvents = (cb: (s: SOSEvent[]) => void) =>
 export const saveSOSEvent = (s: SOSEvent) => save("sos_events", s.id, s);
 export const updateSOSEventRemote = (id: string, data: Partial<SOSEvent>) =>
   update("sos_events", id, data);
+
+// ─── Patrol Routes ────────────────────────────────────────────────────────────
+import type { PatrolRoute } from "../types/security";
+
+export const subscribePatrolRoutes = (cb: (r: PatrolRoute[]) => void) =>
+  subscribe<PatrolRoute>("patrol_routes", cb);
+
+export const savePatrolRoute = (r: PatrolRoute) => save("patrol_routes", r.id, r);
+export const deletePatrolRouteRemote = (id: string) => remove("patrol_routes", id);
