@@ -1,4 +1,4 @@
-const CACHE_NAME = "mustafaqa-cache-v3";
+const CACHE_NAME = "mustafaqa-cache-v5";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
