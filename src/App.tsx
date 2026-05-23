@@ -1438,7 +1438,22 @@ export default function App() {
         const visitor = snapshot.visitors.find(v => v.passCode === data.passCode);
         if (visitor) { mutate(prev => ({ ...prev, visitors: prev.visitors.map(v => v.id === visitor.id ? { ...v, status: "arrived", checkInTime: nowStamp() } : v) }), language === "ar" ? `✅ تم استقبال ${visitor.guestName}` : `✅ ${visitor.guestName} checked in`); void updateVisitorRemote(visitor.id, { status: "arrived", checkInTime: nowStamp() }); }
       }
-    } catch { showToast(language === "ar" ? "رمز غير معروف" : "Unknown QR", "danger"); }
+    } catch {
+      // Raw string QR (not JSON) - try to match building directly
+      const rawCode = code.trim();
+      const building = snapshot.buildings.find(b =>
+        b.id === rawCode || b.qrCode === rawCode ||
+        b.nameEn.toLowerCase() === rawCode.toLowerCase() || b.nameAr === rawCode
+      );
+      if (building && qrContext === "patrol") {
+        scanPatrolCheckpoint(building.id);
+      } else if (building && qrContext === "report") {
+        setReportScannedBuilding(building.id);
+        showToast(language === "ar" ? `✅ ${building.nameAr}` : `✅ ${building.nameEn}`, "success");
+      } else {
+        showToast(language === "ar" ? "❌ رمز غير معروف" : "❌ Unknown QR code", "danger");
+      }
+    }
     setQrContext(null);
   };
 
