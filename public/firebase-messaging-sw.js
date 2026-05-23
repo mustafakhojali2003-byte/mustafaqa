@@ -46,16 +46,23 @@ messaging.onBackgroundMessage((payload) => {
     ? [{ action: "view_visitor", title: "🎫 عرض الزائر" }]
     : [{ action: "view", title: "📱 فتح" }];
 
-  self.registration.showNotification(title || "QGuard", {
+  // For emergency: try to send message to open app windows first
+  if (isEmergency) {
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(clients => {
+      clients.forEach(c => c.postMessage({ type: "EMERGENCY_FROM_BG", notifType: type }));
+    });
+  }
+
+  self.registration.showNotification(title || "QGuard 🚨", {
     body: body || "",
     icon: "/icon-192.png",
     badge: "/icon-192.png",
     tag,
     requireInteraction: isEmergency || isTask || isReport,
     renotify: true,
-    silent: false,
+    silent: !isEmergency, // let OS play sound for emergencies
     vibrate: isEmergency
-      ? [500, 200, 500, 200, 500, 200, 500]
+      ? [500, 200, 500, 200, 500, 200, 500, 200, 500]
       : isChat || isReport
       ? [300, 100, 300, 100, 300]
       : [200, 100, 200],
