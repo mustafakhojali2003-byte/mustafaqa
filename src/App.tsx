@@ -481,10 +481,12 @@ export default function App() {
   }, [remoteAlerts]);
 
   const mergedVisitors = useMemo(() => {
-    const map = new Map<string, VisitorRecord>();
-    snapshot.visitors.forEach(v => map.set(v.id, v));
-    remoteVisitors.forEach(v => map.set(v.id, v));
-    return Array.from(map.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    // Use Firebase (remoteVisitors) as primary - fresh real-time data
+    if (remoteVisitors.length > 0) {
+      return [...remoteVisitors].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    }
+    // Fallback to local only on first load before Firebase responds
+    return [...snapshot.visitors].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [snapshot.visitors, remoteVisitors]);
 
   const mergedAttendance = useMemo(() => {
@@ -1178,6 +1180,8 @@ export default function App() {
     const qrData = await generateVisitorQR(visitor.passCode, visitor.guestName).catch(() => "");
     const fullVisitor = { ...visitor, qrData };
     // Add visitor without creating an alert (alerts trigger emergency siren)
+    // Optimistic update: add to remoteVisitors immediately for real-time visibility
+    setRemoteVisitors(prev => [fullVisitor, ...prev]);
     mutate(prev => ({ ...prev, visitors: [fullVisitor, ...prev.visitors] }));
     showToast(language === "ar" ? "✅ تمت إضافة الزائر" : "✅ Visitor added", "success");
     void saveVisitor(fullVisitor);
@@ -2972,6 +2976,7 @@ export default function App() {
                                 status: ((document.getElementById(`ev-status-${v.id}`) as HTMLSelectElement)?.value || v.status) as VisitorRecord["status"],
                               };
                               void saveVisitor(updated);
+                              setRemoteVisitors(prev => prev.map(x => x.id === v.id ? updated : x));
                               mutate(prev => ({ ...prev, visitors: prev.visitors.map(x => x.id === v.id ? updated : x) }));
                               setEditingVisitorId(null);
                               showToast(language === "ar" ? "✅ تم التحديث" : "✅ Updated", "success");
@@ -2998,13 +3003,13 @@ export default function App() {
                             {/* Status actions */}
                             {v.status === "scheduled" && (
                               <Btn variant="secondary" className="h-8 px-3 text-xs border-emerald-500/30 text-emerald-300"
-                                onClick={() => { const u = { ...v, status: "arrived" as const, checkInTime: nowStamp() }; void saveVisitor(u); mutate(prev => ({ ...prev, visitors: prev.visitors.map(x => x.id === v.id ? u : x) })); }}>
+                                onClick={() => { const u = { ...v, status: "arrived" as const, checkInTime: nowStamp() }; void saveVisitor(u); setRemoteVisitors(prev => prev.map(x => x.id === v.id ? u : x)); mutate(prev => ({ ...prev, visitors: prev.visitors.map(x => x.id === v.id ? u : x) })); }}>
                                 ✅ {language === "ar" ? "وصل" : "Arrived"}
                               </Btn>
                             )}
                             {v.status === "arrived" && (
                               <Btn variant="secondary" className="h-8 px-3 text-xs border-sky-500/30 text-sky-300"
-                                onClick={() => { const u = { ...v, status: "departed" as const, checkOutTime: nowStamp() }; void saveVisitor(u); mutate(prev => ({ ...prev, visitors: prev.visitors.map(x => x.id === v.id ? u : x) })); }}>
+                                onClick={() => { const u = { ...v, status: "departed" as const, checkOutTime: nowStamp() }; void saveVisitor(u); setRemoteVisitors(prev => prev.map(x => x.id === v.id ? u : x)); mutate(prev => ({ ...prev, visitors: prev.visitors.map(x => x.id === v.id ? u : x) })); }}>
                                 🚶 {language === "ar" ? "غادر" : "Departed"}
                               </Btn>
                             )}
@@ -3016,7 +3021,7 @@ export default function App() {
                             {/* Delete */}
                             {(isOwner || isAdmin) && (
                               <Btn variant="danger" className="h-8 px-3 text-xs"
-                                onClick={() => { void deleteVisitorRemote(v.id); mutate(prev => ({ ...prev, visitors: prev.visitors.filter(x => x.id !== v.id) })); showToast(language === "ar" ? "🗑 حُذف" : "🗑 Deleted", "info"); }}>
+                                onClick={() => { void deleteVisitorRemote(v.id); setRemoteVisitors(prev => prev.filter(x => x.id !== v.id)); mutate(prev => ({ ...prev, visitors: prev.visitors.filter(x => x.id !== v.id) })); showToast(language === "ar" ? "🗑 حُذف" : "🗑 Deleted", "info"); }}>
                                 🗑
                               </Btn>
                             )}
@@ -3272,8 +3277,8 @@ export default function App() {
             const secNum = securityNumber(u.id);
             const assignedBuilding = snapshot.buildings.find(b => b.id === u.assignedBuildingId);
             // Admin sees limited data for guards
-            // Admin sees only name + security number for guards (privacy)
-            const canSeeFullData = isOwner || (isAdmin && u.role !== "guard");
+            // Admin sees only name + security number for ALL users (owner sees everything)
+            const canSeeFullData = isOwner;
 
             return (
               <Panel key={u.id} className={isOnlineUser ? "border-emerald-500/20" : ""}>
