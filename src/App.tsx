@@ -468,6 +468,33 @@ export default function App() {
   }, [isAdmin, isGuard, currentUser]);
 
   // ─── Merge remote + local for ALL collections ─────────────────────────────
+  // All patrol routes deduplicated
+  const allPatrolRoutes = useMemo(() =>
+    [...remotePatrolRoutes, ...patrolRoutes]
+      .filter((r, i, arr) => arr.findIndex(x => x.id === r.id) === i),
+    [remotePatrolRoutes, patrolRoutes]
+  );
+
+  // Guard's own assigned route (top-level, accessible everywhere)
+  const guardMyRoute = useMemo(() => {
+    if (!isGuard || !currentUser) return null;
+    const today = new Date().toISOString().slice(0, 10);
+    return allPatrolRoutes.find(r =>
+      r.active !== false &&
+      (r.assignedGuardId === currentUser.id || r.assignedGuardId === currentUser.email) &&
+      r.completedDate !== today
+    ) ?? null;
+  }, [allPatrolRoutes, isGuard, currentUser]);
+
+  // Guard's completed route today
+  const guardCompletedToday = useMemo(() => {
+    if (!isGuard || !currentUser) return null;
+    const today = new Date().toISOString().slice(0, 10);
+    return allPatrolRoutes.find(r =>
+      r.completedByGuard === currentUser.id && r.completedDate === today
+    ) ?? null;
+  }, [allPatrolRoutes, isGuard, currentUser]);
+
   const mergedReports = useMemo(() => {
     const map = new Map<string, Report>();
     snapshot.reports.forEach(r => map.set(r.id, r));
@@ -1333,7 +1360,14 @@ export default function App() {
     try {
       const data = JSON.parse(code);
       if (data.type === "building" && qrContext === "patrol") {
-        scanPatrolCheckpoint(data.buildingId || snapshot.buildings.find(b => b.qrCode === data.qrCode)?.id || "");
+        const bId = data.buildingId
+          || snapshot.buildings.find(b => b.qrCode === data.qrCode || b.qrCode === data.id || b.id === data.id)?.id
+          || "";
+        if (bId) {
+          scanPatrolCheckpoint(bId);
+        } else {
+          showToast(language === "ar" ? "❌ هذا المبنى غير موجود في مسار جولتك" : "❌ Building not in your patrol route", "danger");
+        }
       } else if (data.type === "building" && qrContext === "report") {
         // QR scan for report - match by id OR qrCode OR buildingName
         const building = snapshot.buildings.find(b =>
@@ -1452,11 +1486,12 @@ export default function App() {
       status: allDone ? "completed" : "active",
       completedAt: allDone ? nowStamp() : undefined,
     };
-    setActivePatrol(allDone ? null : updated);
+    if (!allDone) setActivePatrol(updated);
     if (allDone) {
+      setActivePatrol(null);
       // Mark route completed in Firebase so guard can't repeat today
       const today = new Date().toISOString().slice(0, 10);
-      const completedRoute = allRoutes?.find(r =>
+      const completedRoute = allPatrolRoutes.find(r =>
         r.assignedGuardId === currentUser?.id || r.assignedGuardId === currentUser?.email
       );
       if (completedRoute) {
@@ -2214,19 +2249,9 @@ export default function App() {
       {/* Guard: my assigned route */}
       {isGuard && currentUser && (() => {
         // Merge remote (Firebase) + local routes, deduplicate by id
-      const allRoutes = [...remotePatrolRoutes, ...patrolRoutes]
-        .filter((r, i, arr) => arr.findIndex(x => x.id === r.id) === i);
-      // STRICT: guard sees ONLY their own assigned active route
-      const myRoute = allRoutes.find(r =>
-        r.active !== false &&
-        (r.assignedGuardId === currentUser.id || r.assignedGuardId === currentUser.email) &&
-        r.completedByGuard !== currentUser.id  // not completed today
-      );
-        // Check if guard already completed their route today
-        const today2 = new Date().toISOString().slice(0, 10);
-        const completedToday = allRoutes.find(r =>
-          r.completedByGuard === currentUser.id && r.completedDate === today2
-        );
+      // Use top-level memos (computed outside render, stable references)
+      const myRoute = guardMyRoute;
+      const completedToday = guardCompletedToday;
         if (completedToday && !myRoute) {
           return (
             <Panel className="border-emerald-500/20 text-center py-6">
