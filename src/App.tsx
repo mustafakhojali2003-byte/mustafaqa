@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { setDoc, doc, deleteDoc, getDocs, collection, query, where } from "firebase/firestore";
+import { firestore } from "./services/firebase";
 import AuthScreen from "./components/AuthScreen";
 import QrScannerModal from "./components/QrScannerModal";
 import VisitorManagementModal from "./components/VisitorManagementModal";
 import { playNormalAlertSound, registerNotificationServiceWorker, sendToServiceWorker, showSystemNotification, startEmergencySound, stopEmergencySound, vibrateDevice, vibrateEmergency } from "./services/notificationService";
-import { deleteAlertRemote, deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, savePendingUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers, saveConversation, subscribeReports, saveReport, deleteReportRemote, subscribeAlerts, saveAlert, subscribeVisitors, saveVisitor, updateVisitorRemote, subscribeAttendance, saveAttendance, subscribeTasks, saveTask, updateTaskRemote, deleteTaskRemote, subscribeShifts, saveShift, updateShiftRemote, subscribeViolations, saveViolation, updateViolationRemote, subscribeSOSEvents, saveSOSEvent, updateSOSEventRemote, subscribePatrolRoutes, savePatrolRoute, deletePatrolRouteRemote, subscribeEntryLogs, saveEntryLog, deleteEntryLogRemote } from "./services/firebaseData";
+import { deleteAlertRemote, deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, savePendingUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers, saveConversation, subscribeReports, saveReport, deleteReportRemote, subscribeAlerts, saveAlert, subscribeVisitors, saveVisitor, updateVisitorRemote, deleteVisitorRemote, subscribeAttendance, saveAttendance, subscribeTasks, saveTask, updateTaskRemote, deleteTaskRemote, subscribeShifts, saveShift, updateShiftRemote, subscribeViolations, saveViolation, updateViolationRemote, subscribeSOSEvents, saveSOSEvent, updateSOSEventRemote, subscribePatrolRoutes, savePatrolRoute, deletePatrolRouteRemote, subscribeEntryLogs, saveEntryLog, deleteEntryLogRemote } from "./services/firebaseData";
 import { exportReportsPDF, exportShiftReportPDF, exportFullDashboardPDF } from "./services/pdfService";
 import { generateVisitorQR, generateBuildingQR } from "./services/qrService";
 import { analyzeData } from "./services/analyticsService";
@@ -312,7 +314,7 @@ export default function App() {
   });
   const [multipleVisitors, setMultipleVisitors] = useState(false);
   const [remoteEntryLogs, setRemoteEntryLogs] = useState<EntryLog[]>([]);
-  const [entryLogForm, setEntryLogForm] = useState({ name: "", company: "", purpose: "", notes: "", type: "person" as "person"|"company"|"meeting" });
+  const [entryLogForm, setEntryLogForm] = useState({ name: "", company: "", purpose: "", notes: "", type: "person" as EntryLog["type"] });
   const [showEntryLogForm, setShowEntryLogForm] = useState(false);
   const [editingEntryLogId, setEditingEntryLogId] = useState<string | null>(null);
   const [activeVisitorTab, setActiveVisitorTab] = useState<"visitors"|"entrylog">("visitors");
@@ -3234,7 +3236,30 @@ export default function App() {
     );
   };
 
-  const saveUserEdit = (userId: string) => {
+    const addUserDirectly = (e: FormEvent) => {
+    e.preventDefault();
+    if (!currentUser || !directAddForm.name.trim() || !directAddForm.email.trim() || !directAddForm.password.trim()) return;
+    const newUser: User = {
+      id: `user-${Date.now()}`,
+      name: directAddForm.name.trim(),
+      email: directAddForm.email.trim().toLowerCase(),
+      phone: directAddForm.phone.trim(),
+      role: directAddForm.role,
+      status: "approved",
+      passwordHash: hashPassword(directAddForm.password),
+      assignedBuildingId: directAddForm.buildingId || undefined,
+      permissions: directAddForm.role === "admin" ? ["reports","alerts","attendance","buildings","viewReports","chat","visitors","shifts"] : ["reports","attendance","chat","buildings","visitors","sos"],
+      rating: 5, soundEnabled: true, desktopNotificationsEnabled: true,
+      showFullToAdmin: false, createdAt: nowStamp(), violations: 0,
+    };
+    void saveApprovedUser(newUser);
+    mutate(prev => ({ ...prev, users: [newUser, ...prev.users] }));
+    showToast(language === "ar" ? `✅ تمت إضافة ${newUser.name}` : `✅ ${newUser.name} added`, "success");
+    setDirectAddForm({ name: "", email: "", phone: "", password: "", role: "guard", buildingId: "" });
+    setShowAddUserForm(false);
+  };
+
+const saveUserEdit = (userId: string) => {
     const u = approvedUsers.find(x => x.id === userId);
     if (!u || !currentUser) return;
     const updated: User = {
@@ -3623,7 +3648,7 @@ export default function App() {
                 <div className="mb-4 border-b border-white/10 pb-3 flex items-center justify-between">
                   <div>
                     <div className="font-black text-white">{activeConversation.participantName}</div>
-                    <div className="text-xs text-slate-400">{roleLabel(activeConversation.participantRole, language)}</div>
+                    <div className="text-xs text-slate-400">{pair(language, roleLabels[activeConversation.participantRole])}</div>
                   </div>
                   {isOwner && (
                     <button
@@ -4595,6 +4620,21 @@ export default function App() {
                 </SelInput>
               </div>
               <div><Lbl>{language === "ar" ? "تاريخ الاستحقاق" : "Due Date"}</Lbl><TxtInput type="date" value={taskForm.dueDate} onChange={e => setTaskForm(p => ({ ...p, dueDate: e.target.value }))} /></div>
+            </div>
+            {/* Task type selector */}
+            <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 cursor-pointer"
+              onClick={() => setTaskForm(p => ({ ...p, requiresProof: !p.requiresProof }))}>
+              <div className={`h-6 w-11 rounded-full transition-colors ${taskForm.requiresProof ? "bg-amber-500" : "bg-white/20"} relative flex-shrink-0`}>
+                <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${taskForm.requiresProof ? "translate-x-5" : "translate-x-0.5"}`} />
+              </div>
+              <div>
+                <div className="font-bold text-white text-sm">
+                  {taskForm.requiresProof ? "📸 " + (language === "ar" ? "مهمة تتطلب إثبات مصور" : "Task requires photo proof") : "✅ " + (language === "ar" ? "مهمة عادية" : "Normal task")}
+                </div>
+                <div className="text-xs text-slate-400">
+                  {taskForm.requiresProof ? (language === "ar" ? "الحارس يجب أن يرفع صورة قبل الإنجاز" : "Guard must upload photo before completing") : (language === "ar" ? "الحارس يضغط إنجاز مباشرة" : "Guard taps complete directly")}
+                </div>
+              </div>
             </div>
             <div><Lbl>{language === "ar" ? "التفاصيل" : "Details"}</Lbl><TxtArea rows={3} value={taskForm.details} onChange={e => setTaskForm(p => ({ ...p, details: e.target.value }))} /></div>
             <Btn type="submit">{language === "ar" ? "إضافة المهمة" : "Add Task"}</Btn>
