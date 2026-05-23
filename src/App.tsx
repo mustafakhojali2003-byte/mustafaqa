@@ -4547,10 +4547,7 @@ export default function App() {
   };
 
   if (!currentUser) {
-    const isInAPK = window.navigator.userAgent.includes("wv") || (window as any).Capacitor;
     return (
-      <>
-
       <AuthScreen language={language} buildings={snapshot.buildings} errorMessage={authError} infoMessage={authInfo} onSignIn={handleSignIn} onCreateAccount={handleCreateAccount} onLanguageChange={lang => { setLanguage(lang); document.documentElement.dir = lang === "ar" ? "rtl" : "ltr"; window.localStorage.setItem(LANGUAGE_KEY, lang); }} />
     );
   }
