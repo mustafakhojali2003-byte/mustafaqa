@@ -418,7 +418,7 @@ export default function App() {
 
   const [reportForm, setReportForm] = useState({ buildingId: buildSeedBuildings()[0].id, text: "", status: "normal" as ReportStatus, mediaUrl: "", mediaKind: "" as "" | "image" | "video", fileName: "" });
   const [alertForm, setAlertForm] = useState({ status: "fire", target: "all", text: "", customStatus: "", specificUserId: "" });
-  const [taskForm, setTaskForm] = useState({ title: "", details: "", assignedTo: "all", priority: "medium" as Task["priority"], dueDate: "" });
+  const [taskForm, setTaskForm] = useState({ title: "", details: "", assignedTo: "all", priority: "medium" as Task["priority"], dueDate: "", requiresProof: false });
   const [newUserForm, setNewUserForm] = useState({ name: "", email: "", phone: "", password: "", role: "guard" as Role, buildingId: buildSeedBuildings()[0].id });
 
   const imageInputRef = useRef<HTMLInputElement | null>(null);
@@ -2889,22 +2889,19 @@ export default function App() {
         {/* ══ VISITORS TAB ══ */}
         {activeVisitorTab === "visitors" && (
           <div className="space-y-4">
-            {/* Day tabs */}
-            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-              <button onClick={() => setVisitorDayFilter("all")}
-                className={`flex-shrink-0 rounded-2xl border px-4 py-2 text-xs font-bold transition ${visitorDayFilter === "all" ? "border-amber-400/50 bg-amber-500/15 text-amber-300" : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>
-                {language === "ar" ? "الكل" : "All"}
-              </button>
+            {/* Day filter - dropdown */}
+            <SelInput
+              className="w-56"
+              value={visitorDayFilter}
+              onChange={e => setVisitorDayFilter(e.target.value)}
+            >
+              <option value="all">{language === "ar" ? "📅 الكل" : "📅 All dates"}</option>
               {dayTabs.map(tab => (
-                <button key={tab.date} onClick={() => setVisitorDayFilter(tab.date)}
-                  className={`flex-shrink-0 rounded-2xl border px-4 py-2 text-xs font-bold transition ${visitorDayFilter === tab.date ? "border-amber-400/50 bg-amber-500/15 text-amber-300" : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>
-                  {tab.label}
-                  <span className="ml-1.5 opacity-60 text-[10px]">
-                    {mergedVisitors.filter(v => v.arrivalDate === tab.date).length}
-                  </span>
-                </button>
+                <option key={tab.date} value={tab.date}>
+                  {tab.label} ({mergedVisitors.filter(v => v.arrivalDate === tab.date).length})
+                </option>
               ))}
-            </div>
+            </SelInput>
 
             {/* Search + status filter */}
             <div className="flex flex-wrap gap-2">
@@ -4408,7 +4405,7 @@ export default function App() {
             const isAll = taskForm.assignedTo === "all";
             const guards = isAll ? guardUsers : [guardUsers.find(u => u.id === taskForm.assignedTo)].filter(Boolean) as User[];
             guards.forEach(g => {
-              const task: Task = { id: `t-${Date.now()}-${g.id}`, title: taskForm.title.trim(), details: taskForm.details.trim(), assignedTo: g.id, assignedName: g.name, status: "pending", createdAt: nowStamp(), priority: taskForm.priority, dueDate: taskForm.dueDate || undefined };
+              const task: Task = { id: `t-${Date.now()}-${g.id}`, title: taskForm.title.trim(), details: taskForm.details.trim(), assignedTo: g.id, assignedName: g.name, status: "pending", createdAt: nowStamp(), priority: taskForm.priority, dueDate: taskForm.dueDate || undefined, requiresProof: taskForm.requiresProof, proofImageUrl: undefined };
               void saveTask(task);
               mutate(prev => ({ ...prev, tasks: [task, ...prev.tasks] }));
               // Push to specific guard via Cloudflare Worker
@@ -4456,7 +4453,52 @@ export default function App() {
               </div>
               <div className="flex items-center gap-2">
                 <Badge className={t.status === "done" ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" : "border-amber-400/30 bg-amber-500/15 text-amber-300"}>{t.status}</Badge>
-                {t.status !== "done" && (isGuard || isOwner || isAdmin) && <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => { mutate(prev => ({ ...prev, tasks: prev.tasks.map(x => x.id === t.id ? { ...x, status: "done" } : x) }), language === "ar" ? "تم الإنجاز" : "Done"); void updateTaskRemote(t.id, { status: "done" }); }}>{language === "ar" ? "إنجاز" : "Complete"}</Btn>}
+                {t.requiresProof && <Badge className="border-sky-400/30 bg-sky-500/10 text-sky-300 text-[10px]">📸 {language === "ar" ? "يتطلب إثبات" : "Proof req."}</Badge>}
+                {t.status !== "done" && (isGuard || isOwner || isAdmin) && (
+                  t.requiresProof && !t.proofImageUrl ? (
+                    <div className="flex items-center gap-2">
+                      <label className="cursor-pointer">
+                        <input type="file" accept="image/*" className="hidden" onChange={async e => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const dataUrl = await fileToDataUrl(file);
+                          // Compress to ~200KB
+                          const img = new Image();
+                          img.src = dataUrl;
+                          await new Promise(r => { img.onload = r; });
+                          const canvas = document.createElement("canvas");
+                          const ratio = Math.min(1, 800 / img.width);
+                          canvas.width = img.width * ratio; canvas.height = img.height * ratio;
+                          canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+                          const compressed = canvas.toDataURL("image/jpeg", 0.7);
+                          mutate(prev => ({ ...prev, tasks: prev.tasks.map(x => x.id === t.id ? { ...x, proofImageUrl: compressed } : x) }));
+                          void updateTaskRemote(t.id, { proofImageUrl: compressed });
+                          showToast(language === "ar" ? "📸 تم رفع صورة الإثبات" : "📸 Proof uploaded", "success");
+                          e.target.value = "";
+                        }} />
+                        <span className="inline-flex h-8 items-center gap-1 rounded-2xl border border-sky-500/30 bg-sky-500/10 px-3 text-xs font-bold text-sky-300 hover:bg-sky-500/20 cursor-pointer transition">
+                          📸 {language === "ar" ? "رفع إثبات" : "Upload Proof"}
+                        </span>
+                      </label>
+                      <span className="text-[10px] text-slate-500">{language === "ar" ? "مطلوب قبل الإنجاز" : "Required"}</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      {t.proofImageUrl && (
+                        <button onClick={() => setLightboxUrl(t.proofImageUrl!)}
+                          className="h-8 w-8 overflow-hidden rounded-xl border border-emerald-500/30">
+                          <img src={t.proofImageUrl} className="h-full w-full object-cover" alt="proof" />
+                        </button>
+                      )}
+                      <Btn variant="secondary" className="h-8 px-3 text-xs border-emerald-500/30 text-emerald-300"
+                        onClick={() => {
+                          mutate(prev => ({ ...prev, tasks: prev.tasks.map(x => x.id === t.id ? { ...x, status: "done" } : x) }));
+                          void updateTaskRemote(t.id, { status: "done" });
+                          showToast(language === "ar" ? "✅ تم الإنجاز" : "✅ Done", "success");
+                        }}>✅ {language === "ar" ? "إنجاز" : "Complete"}</Btn>
+                    </div>
+                  )
+                )}
               </div>
             </div>
           </Panel>

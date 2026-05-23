@@ -50,6 +50,8 @@ export interface Task {
   id: string; title: string; details: string; assignedTo: string;
   assignedName: string; status: "pending" | "in-progress" | "done";
   createdAt: string; dueDate?: string; priority?: "low" | "medium" | "high";
+  requiresProof?: boolean;   // task needs photo proof before marking done
+  proofImageUrl?: string;    // compressed base64 proof image
 }
 
 export interface VisitorRecord {
