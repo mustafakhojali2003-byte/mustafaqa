@@ -1508,6 +1508,16 @@ export default function App() {
         const updatedRoute = { ...completedRoute, completedByGuard: currentUser?.id, completedAt: nowStamp(), completedDate: today };
         void savePatrolRoute(updatedRoute);
         setRemotePatrolRoutes(prev => prev.map(r => r.id === completedRoute.id ? updatedRoute : r));
+        // Notify owner when patrol is completed
+        const ownerUser = approvedUsers.find(u => u.role === "owner");
+        if (ownerUser) {
+          void sendPushViaWorker(
+            language === "ar" ? `✅ جولة مكتملة — ${currentUser?.name}` : `✅ Patrol Completed — ${currentUser?.name}`,
+            language === "ar" ? `${completedRoute.nameAr} · ${nowStamp().slice(11,16)}` : `${completedRoute.name} · ${nowStamp().slice(11,16)}`,
+            "task",
+            ownerUser.id
+          );
+        }
       }
       showToast(language === "ar" ? "🎉 تهانينا! اكتملت جولتك الأمنية بنجاح ✅" : "🎉 Congratulations! Patrol completed successfully ✅", "success");
     } else {
@@ -2345,37 +2355,42 @@ export default function App() {
         </Panel>
       )}
 
-      {/* Other available routes for guard */}
-      {isGuard && !activePatrol && (
-        <Panel>
-          <div className="mb-3 font-black text-white">{language === "ar" ? "مسارات متاحة" : "Available Routes"}</div>
-          {(() => {
-            const allRoutes = [...remotePatrolRoutes, ...patrolRoutes.filter(r => !remotePatrolRoutes.some(x => x.id === r.id))];
-            return allRoutes;
-          })().filter(r => r.active).length === 0
-            ? <div className="text-sm text-slate-500 text-center py-2">{language === "ar" ? "لا مسارات نشطة" : "No active routes"}</div>
-            : [...remotePatrolRoutes, ...patrolRoutes.filter(r => !remotePatrolRoutes.some(x => x.id === r.id))].filter(r => r.active).map(r => (
-              <div key={r.id} className="mb-2 flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-3">
-                <div>
-                  <div className="font-bold text-white">{language === "ar" ? r.nameAr : r.name}</div>
-                  <div className="text-xs text-slate-400">{r.buildingIds.length} {language === "ar" ? "نقطة" : "points"}{r.scheduleTime ? ` · ${r.scheduleTime}` : ""}</div>
-                </div>
-                <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => startPatrol(r)}>▶ {language === "ar" ? "بدء" : "Start"}</Btn>
-              </div>
-            ))
-          }
-        </Panel>
-      )}
+      
 
       {/* Owner/Admin: route management table */}
       {(isOwner || isAdmin) && (
         <>
           <Panel>
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex items-center justify-between gap-2 flex-wrap">
               <div className="font-black text-white">📋 {language === "ar" ? "جدول المسارات الدائم" : "Permanent Route Schedule"}</div>
-              <Btn onClick={() => setShowCreateRoute(p => !p)}>
-                {showCreateRoute ? (language === "ar" ? "إلغاء" : "Cancel") : ("+ " + (language === "ar" ? "مسار جديد" : "New Route"))}
-              </Btn>
+              <div className="flex gap-2">
+                <Btn variant="secondary" className="h-8 px-3 text-xs"
+                  onClick={() => {
+                    const completed = allPatrolRoutes.filter(r => r.completedByGuard && r.completedAt);
+                    if (completed.length === 0) { showToast(language === "ar" ? "لا توجد جولات مكتملة بعد" : "No completed patrols yet", "info"); return; }
+                    // Export to Excel
+                    const rows = completed.map(r => ({
+                      [language === "ar" ? "المسار" : "Route"]: language === "ar" ? r.nameAr : r.name,
+                      [language === "ar" ? "الحارس" : "Guard"]: approvedUsers.find(u => u.id === r.completedByGuard)?.name ?? r.completedByGuard ?? "",
+                      [language === "ar" ? "تاريخ الاكتمال" : "Completed Date"]: r.completedDate ?? "",
+                      [language === "ar" ? "وقت الاكتمال" : "Completed At"]: r.completedAt?.slice(11,16) ?? "",
+                      [language === "ar" ? "نقاط التفتيش" : "Checkpoints"]: r.buildingIds.length,
+                      [language === "ar" ? "جدول الوقت" : "Schedule"]: r.scheduleTime ?? "",
+                    }));
+                    import("xlsx").then(XLSX => {
+                      const ws = XLSX.utils.json_to_sheet(rows);
+                      const wb = XLSX.utils.book_new();
+                      XLSX.utils.book_append_sheet(wb, ws, language === "ar" ? "الجولات" : "Patrols");
+                      XLSX.writeFile(wb, `QGuard-Patrols-${new Date().toISOString().slice(0,10)}.xlsx`);
+                      showToast(language === "ar" ? "📥 تم تصدير الجولات" : "📥 Patrols exported", "success");
+                    });
+                  }}>
+                  📥 {language === "ar" ? "تصدير الجولات" : "Export Patrols"}
+                </Btn>
+                <Btn onClick={() => setShowCreateRoute(p => !p)}>
+                  {showCreateRoute ? (language === "ar" ? "إلغاء" : "Cancel") : ("+ " + (language === "ar" ? "مسار جديد" : "New Route"))}
+                </Btn>
+              </div>
             </div>
 
             {/* Create route form */}
