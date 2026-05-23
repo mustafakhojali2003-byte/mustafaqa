@@ -524,10 +524,11 @@ export default function App() {
   }, [snapshot.attendance, remoteAttendance]);
 
   const mergedTasks = useMemo(() => {
-    const map = new Map<string, Task>();
-    snapshot.tasks.forEach(t => map.set(t.id, t));
-    remoteTasks.forEach(t => map.set(t.id, t));
-    return Array.from(map.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    // Prefer Firebase tasks - local snapshot.tasks may have stale seed data
+    if (remoteTasks.length > 0) {
+      return [...remoteTasks].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    }
+    return [...snapshot.tasks].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [snapshot.tasks, remoteTasks]);
 
   const mergedShifts = useMemo(() => {
@@ -785,10 +786,19 @@ export default function App() {
 
     // Listen to foreground FCM messages
     const unsubFCM = listenForegroundMessages((title, body, type) => {
-      const isCritical = type === "emergency" || type === "sos";
-      showToast(`${title}: ${body}`, isCritical ? "danger" : "info");
-      if (isCritical) { void startEmergencySound(); setEmergencyActive(true); vibrateEmergency(); }
-      else { playNormalAlertSound(true); vibrateDevice(); }
+      const isCritical = type === "emergency" || type === "sos" || type === "alert";
+      const isChat = type === "chat";
+      showToast(`${title}${body ? " — " + body.slice(0, 60) : ""}`, isCritical ? "danger" : "info");
+      if (isCritical) {
+        void startEmergencySound(); setEmergencyActive(true); vibrateEmergency();
+      } else if (isChat) {
+        // WhatsApp-style double beep for chat
+        playNormalAlertSound(true); 
+        setTimeout(() => playNormalAlertSound(true), 300);
+        vibrateDevice();
+      } else {
+        playNormalAlertSound(true); vibrateDevice();
+      }
     });
 
     return () => {
@@ -4479,6 +4489,7 @@ export default function App() {
             guards.forEach(g => {
               const task: Task = { id: `t-${Date.now()}-${g.id}`, title: taskForm.title.trim(), details: taskForm.details.trim(), assignedTo: g.id, assignedName: g.name, status: "pending", createdAt: nowStamp(), priority: taskForm.priority, dueDate: taskForm.dueDate || undefined, requiresProof: taskForm.requiresProof, proofImageUrl: undefined };
               void saveTask(task);
+              setRemoteTasks(prev => [task, ...prev]);
               mutate(prev => ({ ...prev, tasks: [task, ...prev.tasks] }));
               // Push to specific guard via Cloudflare Worker
               void sendPushViaWorker(
@@ -4564,6 +4575,7 @@ export default function App() {
                       )}
                       <Btn variant="secondary" className="h-8 px-3 text-xs border-emerald-500/30 text-emerald-300"
                         onClick={() => {
+                          setRemoteTasks(prev => prev.map(x => x.id === t.id ? { ...x, status: "done" } : x));
                           mutate(prev => ({ ...prev, tasks: prev.tasks.map(x => x.id === t.id ? { ...x, status: "done" } : x) }));
                           void updateTaskRemote(t.id, { status: "done" });
                           showToast(language === "ar" ? "✅ تم الإنجاز" : "✅ Done", "success");
