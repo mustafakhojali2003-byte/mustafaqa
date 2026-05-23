@@ -441,7 +441,7 @@ export default function App() {
   const guardUsers = useMemo(() => approvedUsers.filter(u => u.role === "guard"), [approvedUsers]);
 
   const visibleTabs = useMemo((): Tab[] => {
-    if (isGuard) return ["reports", "alerts", "buildings", "visitors", "attendance", "tasks", "chat", "patrol", "settings"];
+    if (isGuard) return ["reports", "alerts", "buildings", "visitors", "attendance", "tasks", "chat", "patrol", "settings"];  // no violations, no scores
     if (isAdmin) return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "tasks", "chat", "violations", "scores", "patrol", "settings"];
     return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "attendance", "tasks", "chat", "analytics", "audit", "violations", "scores", "patrol", "system", "settings"];
   }, [isAdmin, isGuard]);
@@ -528,9 +528,8 @@ export default function App() {
 
   const visibleConversations = useMemo(() => {
     if (!currentUser) return [];
-    // Owner/Admin: see all CURRENT approved users (not deleted/blocked)
-    if (currentUser.role === "owner" || currentUser.role === "admin") {
-      // Start from approvedUsers (already filters deleted+blocked)
+    // Owner: sees all users
+    if (currentUser.role === "owner") {
       const activeUsers = approvedUsers
         .filter(u => u.id !== currentUser.id && !deletedUserIds.has(u.id) && !blockedUserIds.has(u.id));
       
@@ -551,6 +550,14 @@ export default function App() {
           const bTime = b.messages?.[b.messages.length - 1]?.time ?? "";
           return bTime.localeCompare(aTime);
         });
+    }
+    // Admin: sees only owner (not guards)
+    if (currentUser.role === "admin") {
+      const owner = approvedUsers.find(u => u.role === "owner");
+      if (!owner) return [];
+      const existing = conversationsSource.find(c => c.participantId === owner.id);
+      const conv = existing ?? { id: `c-${owner.id}`, participantId: owner.id, participantName: owner.name, participantRole: "owner" as Role, messages: [] };
+      return [{ ...conv, participantName: owner.name, participantRole: "owner" as Role }];
     }
     // Guard: ONLY conversation with owner
     const owner = approvedUsers.find(u => u.role === "owner");
