@@ -3,7 +3,7 @@ import AuthScreen from "./components/AuthScreen";
 import QrScannerModal from "./components/QrScannerModal";
 import VisitorManagementModal from "./components/VisitorManagementModal";
 import { playNormalAlertSound, registerNotificationServiceWorker, sendToServiceWorker, showSystemNotification, startEmergencySound, stopEmergencySound, vibrateDevice, vibrateEmergency } from "./services/notificationService";
-import { deleteAlertRemote, deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, savePendingUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers, saveConversation, subscribeReports, saveReport, deleteReportRemote, subscribeAlerts, saveAlert, subscribeVisitors, saveVisitor, updateVisitorRemote, subscribeAttendance, saveAttendance, subscribeTasks, saveTask, updateTaskRemote, deleteTaskRemote, subscribeShifts, saveShift, updateShiftRemote, subscribeViolations, saveViolation, updateViolationRemote, subscribeSOSEvents, saveSOSEvent, updateSOSEventRemote } from "./services/firebaseData";
+import { deleteAlertRemote, deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, savePendingUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers, saveConversation, subscribeReports, saveReport, deleteReportRemote, subscribeAlerts, saveAlert, subscribeVisitors, saveVisitor, updateVisitorRemote, subscribeAttendance, saveAttendance, subscribeTasks, saveTask, updateTaskRemote, deleteTaskRemote, subscribeShifts, saveShift, updateShiftRemote, subscribeViolations, saveViolation, updateViolationRemote, subscribeSOSEvents, saveSOSEvent, updateSOSEventRemote, subscribePatrolRoutes, savePatrolRoute } from "./services/firebaseData";
 import { exportReportsPDF, exportShiftReportPDF, exportFullDashboardPDF } from "./services/pdfService";
 import { generateVisitorQR, generateBuildingQR } from "./services/qrService";
 import { analyzeData } from "./services/analyticsService";
@@ -668,6 +668,7 @@ export default function App() {
     const unsubConversations = subscribeConversations(setRemoteConversations);
     const unsubReports = subscribeReports(setRemoteReports);
     const unsubAlerts = subscribeAlerts(setRemoteAlerts);
+    const unsubPatrol = subscribePatrolRoutes(setRemotePatrolRoutes);
     const unsubVisitors = subscribeVisitors(setRemoteVisitors);
     const unsubAttendance = subscribeAttendance(setRemoteAttendance);
     const unsubTasks = subscribeTasks(setRemoteTasks);
@@ -2107,8 +2108,7 @@ export default function App() {
       {isGuard && currentUser && (() => {
         // Merge remote (Firebase) + local routes, deduplicate by id
       const allRoutes = [...remotePatrolRoutes, ...patrolRoutes]
-        .filter((r, i, arr) => arr.findIndex(x => x.id === r.id) === i)
-        .filter(r => r.sentToGuard === true);  // Guard only sees routes sent to them
+        .filter((r, i, arr) => arr.findIndex(x => x.id === r.id) === i);
       const myRoute = allRoutes.find(r =>
         (r.assignedGuardId === currentUser.id || r.assignedGuardId === currentUser.email) &&
         r.active !== false
@@ -2267,7 +2267,7 @@ export default function App() {
                     try {
                       const { setDoc, doc } = await import("firebase/firestore");
                       const { firestore } = await import("./services/firebase");
-                      await setDoc(doc(firestore, "patrol_routes", route.id), route);
+                      void savePatrolRoute(route);
                       // Send push notification to assigned guard
                       if (route.assignedGuardId && route.assignedGuardName) {
                         void sendPushViaWorker(
@@ -2332,7 +2332,7 @@ export default function App() {
                                   try {
                                     const { setDoc, doc } = await import("firebase/firestore");
                                     const { firestore } = await import("./services/firebase");
-                                    await setDoc(doc(firestore, "patrol_routes", r.id), updatedRoute);
+                                    void savePatrolRoute(updatedRoute);
                                   } catch { }
                                 })();
                                 setEditRouteId(null);
@@ -2363,7 +2363,12 @@ export default function App() {
                             </div>
                             <div className="flex gap-2 flex-shrink-0">
                               <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => setEditRouteId(r.id)}>✏️ {language === "ar" ? "تعديل" : "Edit"}</Btn>
-                              <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => { setPatrolRoutes(prev => prev.map(x => x.id === r.id ? { ...x, active: !x.active } : x)); showToast(r.active ? (language === "ar" ? "تم إيقاف المسار" : "Route deactivated") : (language === "ar" ? "تم تفعيل المسار" : "Route activated"), "info"); }}>
+                              <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => {
+                                const updated = { ...r, active: !r.active };
+                                setPatrolRoutes(prev => prev.map(x => x.id === r.id ? updated : x));
+                                void savePatrolRoute(updated);
+                                showToast(r.active ? (language === "ar" ? "تم إيقاف المسار" : "Route deactivated") : (language === "ar" ? "تم تفعيل المسار" : "Route activated"), "info");
+                              }}>
                                 {r.active ? (language === "ar" ? "إيقاف" : "Disable") : (language === "ar" ? "تفعيل" : "Enable")}
                               </Btn>
                               <Btn variant="danger" className="h-8 px-3 text-xs" onClick={async () => {
