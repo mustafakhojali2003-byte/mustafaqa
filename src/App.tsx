@@ -587,7 +587,7 @@ export default function App() {
   }, [approvedUsers, conversationsSource, currentUser]);
 
   const activeConversation = useMemo(() => visibleConversations.find(c => c.id === conversationId) ?? visibleConversations[0], [conversationId, visibleConversations]);
-  const visibleTasks = useMemo(() => isGuard && currentUser ? mergedTasks.filter(t => t.assignedTo === currentUser.id) : snapshot.tasks, [currentUser, isGuard, snapshot.tasks]);
+  const visibleTasks = useMemo(() => isGuard && currentUser ? mergedTasks.filter(t => t.assignedTo === currentUser.id || t.assignedTo === currentUser.email) : mergedTasks, [currentUser, isGuard, mergedTasks]);
 
   const todayShifts = useMemo(() => {
     const base = isGuard && currentUser
@@ -1450,6 +1450,16 @@ export default function App() {
     };
     setActivePatrol(allDone ? null : updated);
     if (allDone) {
+      // Mark route completed in Firebase so guard can't repeat today
+      const today = new Date().toISOString().slice(0, 10);
+      const completedRoute = allRoutes?.find(r =>
+        r.assignedGuardId === currentUser?.id || r.assignedGuardId === currentUser?.email
+      );
+      if (completedRoute) {
+        const updatedRoute = { ...completedRoute, completedByGuard: currentUser?.id, completedAt: nowStamp(), completedDate: today };
+        void savePatrolRoute(updatedRoute);
+        setRemotePatrolRoutes(prev => prev.map(r => r.id === completedRoute.id ? updatedRoute : r));
+      }
       showToast(language === "ar" ? "🎉 تهانينا! اكتملت جولتك الأمنية بنجاح ✅" : "🎉 Congratulations! Patrol completed successfully ✅", "success");
     } else {
       const next = updatedCheckpoints.find(cp => !cp.scannedAt);
@@ -2202,10 +2212,26 @@ export default function App() {
         // Merge remote (Firebase) + local routes, deduplicate by id
       const allRoutes = [...remotePatrolRoutes, ...patrolRoutes]
         .filter((r, i, arr) => arr.findIndex(x => x.id === r.id) === i);
+      // STRICT: guard sees ONLY their own assigned active route
       const myRoute = allRoutes.find(r =>
+        r.active !== false &&
         (r.assignedGuardId === currentUser.id || r.assignedGuardId === currentUser.email) &&
-        r.active !== false
+        r.completedByGuard !== currentUser.id  // not completed today
       );
+        // Check if guard already completed their route today
+        const today2 = new Date().toISOString().slice(0, 10);
+        const completedToday = allRoutes.find(r =>
+          r.completedByGuard === currentUser.id && r.completedDate === today2
+        );
+        if (completedToday && !myRoute) {
+          return (
+            <Panel className="border-emerald-500/20 text-center py-6">
+              <div className="text-4xl mb-2">✅</div>
+              <div className="font-black text-emerald-300 text-lg">{language === "ar" ? "أحسنت! اكتملت جولتك اليوم" : "Well done! Patrol completed today"}</div>
+              <div className="text-xs text-slate-400 mt-1">{completedToday.nameAr ?? completedToday.name} · {completedToday.completedAt?.slice(11, 16)}</div>
+            </Panel>
+          );
+        }
         return myRoute ? (
           <Panel className="border-amber-400/20">
             <div className="mb-3 flex items-center justify-between">
@@ -3118,6 +3144,22 @@ export default function App() {
         )}
       </div>
     );
+  };
+
+  const saveUserEdit = (userId: string) => {
+    const u = approvedUsers.find(x => x.id === userId);
+    if (!u || !currentUser) return;
+    const updated: User = {
+      ...u,
+      name: editUserForm.name.trim() || u.name,
+      phone: editUserForm.phone.trim() || u.phone,
+      role: editUserForm.role,
+      assignedBuildingId: editUserForm.buildingId || u.assignedBuildingId,
+    };
+    void saveApprovedUser(updated);
+    mutate(prev => ({ ...prev, users: prev.users.map(x => x.id === userId ? updated : x) }));
+    setEditUserId(null);
+    showToast(language === "ar" ? "✅ تم حفظ التغييرات" : "✅ Changes saved", "success");
   };
 
   const renderUsers = () => {

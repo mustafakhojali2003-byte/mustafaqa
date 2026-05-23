@@ -156,7 +156,10 @@ export interface PatrolRoute {
   assignedGuardName?: string;
   scheduleTime?: string;   // e.g. "22:00" - time guard should start patrol
   active: boolean;         // route is active/inactive
-  sentToGuard?: boolean;   // owner must send before guard sees it
+  sentToGuard?: boolean;       // owner must send before guard sees it
+  completedByGuard?: string;   // guardId who completed this route
+  completedDate?: string;      // YYYY-MM-DD when completed
+  completedAt?: string;        // full timestamp
   notes?: string;
 }
 
