@@ -1285,8 +1285,6 @@ export default function App() {
     void deletePendingUserRemote(userId);
     // Write auto-login signal so user's device logs in immediately
     try {
-      const { setDoc, doc } = await import("firebase/firestore");
-      const { firestore } = await import("./services/firebase");
       await setDoc(doc(firestore, "login_approved", userId), {
         userId, approvedAt: nowStamp(), approvedBy: currentUser.name
       });
@@ -1321,8 +1319,6 @@ export default function App() {
 // Account deleted - not blocked (can re-register)
     // Delete FCM tokens + write forced logout marker
     try {
-      const { deleteDoc, setDoc, doc, collection, getDocs, query, where } = await import("firebase/firestore");
-      const { firestore } = await import("./services/firebase");
       // Delete FCM tokens
       const tokSnap = await getDocs(query(collection(firestore, "fcm_tokens"), where("userId", "==", userId)));
       tokSnap.forEach(d => deleteDoc(d.ref));
@@ -1337,8 +1333,6 @@ export default function App() {
   const blockUser = async (userId: string, userName: string) => {
     if (!currentUser) return;
     try {
-      const { setDoc, doc } = await import("firebase/firestore");
-      const { firestore } = await import("./services/firebase");
       await setDoc(doc(firestore, "blocked_users", userId), {
         blockedAt: nowStamp(), blockedBy: currentUser.name, userId, userName, reason: "manual_block"
       });
@@ -1350,8 +1344,6 @@ export default function App() {
   const unblockUser = async (userId: string, userName: string) => {
     if (!currentUser) return;
     try {
-      const { deleteDoc, doc } = await import("firebase/firestore");
-      const { firestore } = await import("./services/firebase");
       await deleteDoc(doc(firestore, "blocked_users", userId));
       setBlockedUserIds(prev => { const n = new Set(prev); n.delete(userId); return n; });
       showToast(language === "ar" ? `✅ تم رفع الحظر عن ${userName}` : `✅ ${userName} unblocked`, "success");
@@ -3886,8 +3878,6 @@ export default function App() {
       await new Promise(r => setTimeout(r, 1500));
       for (const rec of oldRecords) {
         try {
-          const { deleteDoc, doc } = await import("firebase/firestore");
-          const { firestore } = await import("./services/firebase");
           await deleteDoc(doc(firestore, "attendance", rec.id));
         } catch { /* ignore */ }
       }
