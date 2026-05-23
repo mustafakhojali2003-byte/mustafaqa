@@ -306,7 +306,10 @@ export default function App() {
   const [notificationPermission, setNotificationPermission] = useState("default");
   const [visitorModalOpen, setVisitorModalOpen] = useState(false);
   const [editingVisitorId, setEditingVisitorId] = useState<string | null>(null);
-  const [visitorDayFilter, setVisitorDayFilter] = useState<string>(() => new Date().toISOString().slice(0,10));
+  const [visitorDayFilter, setVisitorDayFilter] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  });
   const [multipleVisitors, setMultipleVisitors] = useState(false);
   const [remoteEntryLogs, setRemoteEntryLogs] = useState<EntryLog[]>([]);
   const [entryLogForm, setEntryLogForm] = useState({ name: "", company: "", purpose: "", notes: "", type: "person" as "person"|"company"|"meeting" });
@@ -1183,7 +1186,7 @@ export default function App() {
       void sendPushViaWorker(
         `🎫 ${language === "ar" ? "زائر جديد" : "New Visitor"} — ${visitor.guestName}`,
         `${visitor.company} · ${visitor.arrivalDate} ${visitor.arrivalTime} · ${language === "ar" ? "رمز الدخول" : "Pass"}: ${fullVisitor.passCode}`,
-        "alert",
+        "task",
         g.id
       );
     });
@@ -2840,9 +2843,15 @@ export default function App() {
     const todayDay = new Date().getDay();
 
     // Build day tabs: today + next 6 days
-    const dayTabs = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(); d.setDate(d.getDate() + i);
-      return { date: d.toISOString().slice(0,10), label: i === 0 ? (language === "ar" ? "اليوم" : "Today") : dayNames[language][d.getDay()] };
+    // Build 14-day window: 7 past + today + 6 future
+    const dayTabs = Array.from({ length: 14 }, (_, i) => {
+      const d = new Date(); d.setDate(d.getDate() + (i - 7));
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      const isToday = i === 7;
+      return { 
+        date: dateStr, 
+        label: isToday ? (language === "ar" ? "اليوم" : "Today") : dayNames[language][d.getDay()]
+      };
     });
 
     const selectedDate = visitorDayFilter === "all" ? null : visitorDayFilter;
