@@ -1,7 +1,11 @@
 package qa.mustafa.security;
 
 import android.Manifest;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.pm.PackageManager;
+import android.media.AudioAttributes;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.webkit.PermissionRequest;
@@ -20,8 +24,48 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        createNotificationChannels();
         requestAllPermissions();
         setupWebViewPermissions();
+    }
+
+    private void createNotificationChannels() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager nm = getSystemService(NotificationManager.class);
+
+            // ── Emergency channel: bypasses Do Not Disturb, plays siren ──
+            AudioAttributes alarmAttr = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build();
+
+            Uri sirenUri = Uri.parse(
+                "android.resource://" + getPackageName() + "/raw/siren"
+            );
+
+            NotificationChannel emergency = new NotificationChannel(
+                "qguard_emergency",
+                "QGuard طوارئ",
+                NotificationManager.IMPORTANCE_HIGH
+            );
+            emergency.setDescription("تنبيهات الطوارئ الأمنية");
+            emergency.setBypassDnd(true);
+            emergency.setShowBadge(true);
+            emergency.enableVibration(true);
+            emergency.setVibrationPattern(new long[]{0, 500, 200, 500, 200, 500, 200, 500});
+            emergency.setSound(sirenUri, alarmAttr);
+            nm.createNotificationChannel(emergency);
+
+            // ── Normal channel: standard notifications ──
+            NotificationChannel normal = new NotificationChannel(
+                "qguard_default",
+                "QGuard إشعارات",
+                NotificationManager.IMPORTANCE_DEFAULT
+            );
+            normal.setDescription("إشعارات المهام والرسائل");
+            normal.enableVibration(true);
+            nm.createNotificationChannel(normal);
+        }
     }
 
     // Allow WebView (browser inside app) to use camera and microphone

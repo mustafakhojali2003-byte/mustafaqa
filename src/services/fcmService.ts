@@ -86,7 +86,7 @@ export async function sendPushViaWorker(
           notification: {
             channel_id: "qguard_emergency",
             notification_priority: "PRIORITY_MAX",
-            sound: "default",
+            sound: "siren",
             default_sound: true,
             default_vibrate_timings: true,
             default_light_settings: true,
