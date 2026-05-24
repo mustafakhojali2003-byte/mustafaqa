@@ -942,6 +942,31 @@ export default function App() {
   }, [currentUser, mergedAlerts]);
 
   // ─── Request all permissions after login ────────────────────────────────────
+  // ── Check for app updates (APK only) ──
+  const checkForUpdate = async () => {
+    try {
+      const res = await fetch("https://api.github.com/repos/mustafakhojali2003-byte/mustafaqa/releases/latest");
+      const data = await res.json();
+      const latestVersion = data.tag_name; // e.g. "v59"
+      const currentVersion = localStorage.getItem("qguard-apk-version") ?? "";
+      if (latestVersion && latestVersion !== currentVersion) {
+        const apkAsset = data.assets?.find((a: {name:string}) => a.name.endsWith(".apk"));
+        if (apkAsset) {
+          showToast(
+            language === "ar"
+              ? `🆕 تحديث جديد ${latestVersion} متوفر — اضغط للتحميل`
+              : `🆕 Update ${latestVersion} available — tap to download`,
+            "info"
+          );
+          // Store version to avoid repeated alerts
+          localStorage.setItem("qguard-apk-version", latestVersion);
+          // Auto-open download after 2s
+          setTimeout(() => window.open(apkAsset.browser_download_url, "_blank"), 2000);
+        }
+      }
+    } catch { /* silent fail */ }
+  };
+
   const requestAllPermissions = async () => {
     // 1. Notifications - ask if not granted
     if ("Notification" in window && Notification.permission !== "granted") {
