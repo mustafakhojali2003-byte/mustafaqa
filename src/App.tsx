@@ -942,26 +942,20 @@ export default function App() {
   }, [currentUser, mergedAlerts]);
 
   // ─── Request all permissions after login ────────────────────────────────────
+  // ── App update state ──
+  const [updateInfo, setUpdateInfo] = useState<{version: string; url: string} | null>(null);
+
   // ── Check for app updates (APK only) ──
   const checkForUpdate = async () => {
     try {
       const res = await fetch("https://api.github.com/repos/mustafakhojali2003-byte/mustafaqa/releases/latest");
       const data = await res.json();
-      const latestVersion = data.tag_name; // e.g. "v59"
+      const latestVersion = data.tag_name;
       const currentVersion = localStorage.getItem("qguard-apk-version") ?? "";
       if (latestVersion && latestVersion !== currentVersion) {
         const apkAsset = data.assets?.find((a: {name:string}) => a.name.endsWith(".apk"));
         if (apkAsset) {
-          showToast(
-            language === "ar"
-              ? `🆕 تحديث جديد ${latestVersion} متوفر — اضغط للتحميل`
-              : `🆕 Update ${latestVersion} available — tap to download`,
-            "info"
-          );
-          // Store version to avoid repeated alerts
-          localStorage.setItem("qguard-apk-version", latestVersion);
-          // Auto-open download after 2s
-          setTimeout(() => window.open(apkAsset.browser_download_url, "_blank"), 2000);
+          setUpdateInfo({ version: latestVersion, url: apkAsset.browser_download_url });
         }
       }
     } catch { /* silent fail */ }
@@ -5350,6 +5344,41 @@ const saveUserEdit = (userId: string) => {
           </div>
         </div>
       )}
+      {/* ── Update Modal ── */}
+      {updateInfo && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4" style={{background:"rgba(0,0,0,0.85)"}}>
+          <div className="w-full max-w-sm rounded-[28px] border border-amber-400/30 bg-[#0b132b] p-6 shadow-2xl text-center">
+            <div className="mb-3 text-5xl">🆕</div>
+            <div className="text-xl font-black text-white mb-1">
+              {language === "ar" ? "تحديث جديد متوفر" : "Update Available"}
+            </div>
+            <div className="text-amber-400 font-bold text-lg mb-3">{updateInfo.version}</div>
+            <div className="text-sm text-slate-400 mb-6">
+              {language === "ar"
+                ? "يوجد إصدار جديد من QGuard. اضغط تحديث لتحميله وتثبيته."
+                : "A new version of QGuard is available. Tap Update to download and install."}
+            </div>
+            <div className="flex gap-3">
+              <button
+                className="flex-1 rounded-2xl border border-white/10 bg-white/5 py-3 text-sm font-bold text-slate-400"
+                onClick={() => {
+                  localStorage.setItem("qguard-apk-version", updateInfo.version);
+                  setUpdateInfo(null);
+                }}
+              >{language === "ar" ? "لاحقاً" : "Later"}</button>
+              <button
+                className="flex-1 rounded-2xl bg-amber-500 py-3 text-sm font-black text-black"
+                onClick={() => {
+                  localStorage.setItem("qguard-apk-version", updateInfo.version);
+                  window.open(updateInfo.url, "_blank");
+                  setUpdateInfo(null);
+                }}
+              >⬇️ {language === "ar" ? "تحديث الآن" : "Update Now"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Lightbox */}
       {lightboxUrl && (
         <div
