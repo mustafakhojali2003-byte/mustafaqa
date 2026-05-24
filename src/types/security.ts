@@ -171,6 +171,9 @@ export interface EntryLog {
   purpose: string;
   type: "person" | "company" | "meeting" | "delivery" | "other";
   notes?: string;
+  phone?: string;
+  idNumber?: string;
+  visitDate?: string;
   buildingId?: string;
   guardId: string;
   guardName: string;

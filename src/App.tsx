@@ -314,7 +314,7 @@ export default function App() {
   });
   const [multipleVisitors, setMultipleVisitors] = useState(false);
   const [remoteEntryLogs, setRemoteEntryLogs] = useState<EntryLog[]>([]);
-  const [entryLogForm, setEntryLogForm] = useState({ name: "", company: "", purpose: "", notes: "", type: "person" as EntryLog["type"] });
+  const [entryLogForm, setEntryLogForm] = useState({ name: "", company: "", purpose: "", notes: "", type: "person" as EntryLog["type"], phone: "", idNumber: "", visitDate: new Date().toISOString().slice(0,10) });
   const [showEntryLogForm, setShowEntryLogForm] = useState(false);
   const [editingEntryLogId, setEditingEntryLogId] = useState<string | null>(null);
   const [activeVisitorTab, setActiveVisitorTab] = useState<"visitors"|"entrylog">("visitors");
@@ -3125,7 +3125,7 @@ export default function App() {
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <div className="text-sm text-slate-400">{language === "ar" ? "سجل الداخلين للمركز" : "Facility entry log"}</div>
-              <Btn onClick={() => { setEntryLogForm({ name: "", company: "", purpose: "", notes: "", type: "person" }); setShowEntryLogForm(true); setEditingEntryLogId(null); }}>
+              <Btn onClick={() => { setEntryLogForm({ name: "", company: "", purpose: "", notes: "", type: "person", phone: "", idNumber: "", visitDate: new Date().toISOString().slice(0,10) }); setShowEntryLogForm(true); setEditingEntryLogId(null); }}>
                 + {language === "ar" ? "إضافة سجل" : "Add Entry"}
               </Btn>
             </div>
@@ -3135,7 +3135,8 @@ export default function App() {
               <Panel className="border-amber-400/20">
                 <div className="mb-3 font-bold text-amber-300">{editingEntryLogId ? (language === "ar" ? "تعديل السجل" : "Edit Entry") : (language === "ar" ? "إضافة سجل دخول" : "Add Entry Log")}</div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div><Lbl>{language === "ar" ? "الاسم / الجهة" : "Name / Entity"}</Lbl>
+                  {/* Row 1: Name + Type */}
+                  <div><Lbl>{language === "ar" ? "الاسم / الجهة *" : "Name / Entity *"}</Lbl>
                     <TxtInput value={entryLogForm.name} onChange={e => setEntryLogForm(p => ({ ...p, name: e.target.value }))} placeholder={language === "ar" ? "اسم الشخص أو الجهة" : "Person or entity name"} />
                   </div>
                   <div><Lbl>{language === "ar" ? "النوع" : "Type"}</Lbl>
@@ -3147,13 +3148,25 @@ export default function App() {
                       <option value="other">{language === "ar" ? "أخرى" : "Other"}</option>
                     </SelInput>
                   </div>
+                  {/* Row 2: Phone + ID */}
+                  <div><Lbl>{language === "ar" ? "رقم الهاتف" : "Phone Number"}</Lbl>
+                    <TxtInput type="tel" value={entryLogForm.phone} onChange={e => setEntryLogForm(p => ({ ...p, phone: e.target.value }))} placeholder={language === "ar" ? "05XXXXXXXX" : "05XXXXXXXX"} />
+                  </div>
+                  <div><Lbl>{language === "ar" ? "رقم الهوية / الجواز" : "ID / Passport No."}</Lbl>
+                    <TxtInput value={entryLogForm.idNumber} onChange={e => setEntryLogForm(p => ({ ...p, idNumber: e.target.value }))} placeholder={language === "ar" ? "رقم الهوية الوطنية أو الجواز" : "National ID or Passport"} />
+                  </div>
+                  {/* Row 3: Visit date + Company */}
+                  <div><Lbl>{language === "ar" ? "تاريخ الزيارة" : "Visit Date"}</Lbl>
+                    <TxtInput type="date" value={entryLogForm.visitDate} onChange={e => setEntryLogForm(p => ({ ...p, visitDate: e.target.value }))} />
+                  </div>
                   <div><Lbl>{language === "ar" ? "الشركة / المؤسسة" : "Company"}</Lbl>
                     <TxtInput value={entryLogForm.company} onChange={e => setEntryLogForm(p => ({ ...p, company: e.target.value }))} placeholder={language === "ar" ? "اختياري" : "Optional"} />
                   </div>
-                  <div><Lbl>{language === "ar" ? "الغرض" : "Purpose"}</Lbl>
+                  {/* Row 4: Purpose + Notes */}
+                  <div><Lbl>{language === "ar" ? "الغرض من الزيارة *" : "Purpose of Visit *"}</Lbl>
                     <TxtInput value={entryLogForm.purpose} onChange={e => setEntryLogForm(p => ({ ...p, purpose: e.target.value }))} placeholder={language === "ar" ? "سبب الزيارة" : "Reason for visit"} />
                   </div>
-                  <div className="sm:col-span-2"><Lbl>{language === "ar" ? "ملاحظات" : "Notes"}</Lbl>
+                  <div><Lbl>{language === "ar" ? "ملاحظات" : "Notes"}</Lbl>
                     <TxtInput value={entryLogForm.notes} onChange={e => setEntryLogForm(p => ({ ...p, notes: e.target.value }))} placeholder={language === "ar" ? "أي معلومات إضافية" : "Additional info"} />
                   </div>
                 </div>
@@ -3167,6 +3180,9 @@ export default function App() {
                       purpose: entryLogForm.purpose.trim(),
                       type: entryLogForm.type,
                       notes: entryLogForm.notes.trim() || undefined,
+                      phone: entryLogForm.phone.trim() || undefined,
+                      idNumber: entryLogForm.idNumber.trim() || undefined,
+                      visitDate: entryLogForm.visitDate || new Date().toISOString().slice(0,10),
                       guardId: currentUser?.id ?? "",
                       guardName: currentUser?.name ?? "",
                       time: editingEntryLogId ? (remoteEntryLogs.find(e => e.id === editingEntryLogId)?.time ?? nowStamp()) : nowStamp(),
@@ -3176,7 +3192,7 @@ export default function App() {
                     setRemoteEntryLogs(prev => editingEntryLogId ? prev.map(e => e.id === editingEntryLogId ? entry : e) : [entry, ...prev]);
                     setShowEntryLogForm(false);
                     setEditingEntryLogId(null);
-                    setEntryLogForm({ name: "", company: "", purpose: "", notes: "", type: "person" });
+                    setEntryLogForm({ name: "", company: "", purpose: "", notes: "", type: "person", phone: "", idNumber: "", visitDate: new Date().toISOString().slice(0,10) });
                     showToast(language === "ar" ? "✅ تم الحفظ" : "✅ Saved", "success");
                   }}>{editingEntryLogId ? (language === "ar" ? "💾 تحديث" : "💾 Update") : (language === "ar" ? "✅ إضافة" : "✅ Add")}</Btn>
                   <Btn variant="secondary" onClick={() => { setShowEntryLogForm(false); setEditingEntryLogId(null); }}>{language === "ar" ? "إلغاء" : "Cancel"}</Btn>
@@ -3201,11 +3217,14 @@ export default function App() {
                             <Badge className="border-slate-400/20 bg-slate-500/10 text-slate-400 text-xs">{typeLabel[e.type]}</Badge>
                           </div>
                           <div className="flex flex-wrap gap-3 text-xs text-slate-400">
+                            {e.visitDate && <span>📅 {e.visitDate}</span>}
+                            {e.phone && <span>📞 {e.phone}</span>}
+                            {e.idNumber && <span>🪪 {e.idNumber}</span>}
                             {e.company && <span>🏛 {e.company}</span>}
                             {e.purpose && <span>📝 {e.purpose}</span>}
-                            <span>🕐 {e.time.slice(11,16)} · {e.time.slice(0,10)}</span>
+                            <span>🕐 {e.time.slice(11,16)}</span>
                             <span>👮 {e.guardName}</span>
-                            {e.editedAt && <span className="text-slate-600">{language === "ar" ? "✏️ معدّل" : "✏️ edited"}</span>}
+                            {e.editedAt && <span className="text-slate-600">✏️ {language === "ar" ? "معدّل" : "edited"}</span>}
                           </div>
                           {e.notes && <div className="text-xs text-slate-500 italic">{e.notes}</div>}
                         </div>
@@ -3213,7 +3232,7 @@ export default function App() {
                           {(isOwner || isAdmin || e.guardId === currentUser?.id) && (
                             <button
                               className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/10"
-                              onClick={() => { setEntryLogForm({ name: e.name, company: e.company, purpose: e.purpose, notes: e.notes ?? "", type: e.type }); setEditingEntryLogId(e.id); setShowEntryLogForm(true); }}>
+                              onClick={() => { setEntryLogForm({ name: e.name, company: e.company, purpose: e.purpose, notes: e.notes ?? "", type: e.type, phone: e.phone ?? "", idNumber: e.idNumber ?? "", visitDate: e.visitDate ?? new Date().toISOString().slice(0,10) }); setEditingEntryLogId(e.id); setShowEntryLogForm(true); }}>
                               ✏️
                             </button>
                           )}
