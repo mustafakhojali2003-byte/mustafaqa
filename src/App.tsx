@@ -607,12 +607,18 @@ export default function App() {
       const conv = existing ?? { id: `c-${owner.id}`, participantId: owner.id, participantName: owner.name, participantRole: "owner" as Role, messages: [] };
       return [{ ...conv, participantName: owner.name, participantRole: "owner" as Role }];
     }
-    // Guard: ONLY conversation with owner
-    const owner = approvedUsers.find(u => u.role === "owner");
-    if (!owner) return [];
-    const existing = conversationsSource.find(c => c.participantId === currentUser.id);
-    const conv = existing ?? { id: `c-${currentUser.id}`, participantId: currentUser.id, participantName: currentUser.name, participantRole: currentUser.role, messages: [] };
-    return [{ ...conv, participantName: owner.name, participantRole: "owner" as Role }];
+    // Guard: conversation with owner + all admins
+    const ownerAndAdmins = approvedUsers.filter(u =>
+      (u.role === "owner" || u.role === "admin") &&
+      !deletedUserIds.has(u.id) && !blockedUserIds.has(u.id)
+    );
+    return ownerAndAdmins.map(u => {
+      // Guard's conversation is keyed by guard's id for owner, but by the admin id for admins
+      const convKey = u.role === "owner" ? currentUser.id : u.id;
+      const existing = conversationsSource.find(c => c.participantId === convKey || c.participantId === u.id);
+      const conv = existing ?? { id: `c-${convKey}`, participantId: convKey, participantName: u.name, participantRole: u.role as Role, messages: [] };
+      return { ...conv, participantName: u.name, participantRole: u.role as Role };
+    });
   }, [approvedUsers, conversationsSource, currentUser]);
 
   const activeConversation = useMemo(() => visibleConversations.find(c => c.id === conversationId) ?? visibleConversations[0], [conversationId, visibleConversations]);
@@ -3940,9 +3946,9 @@ const saveUserEdit = (userId: string) => {
       {/* Alert log */}
       <Panel>
         <div className="mb-3 font-black text-white">{language === "ar" ? "سجل التنبيهات" : "Alert Log"}</div>
-        {mergedAlerts.length === 0
+        {(isOwner ? mergedAlerts.filter(a => !hiddenAlertIds.has(a.id)) : mergedAlerts).length === 0
           ? <EmptyMsg title={language === "ar" ? "لا تنبيهات" : "No Alerts"} text="" />
-          : mergedAlerts.map(a => {
+          : (isOwner ? mergedAlerts.filter(a => !hiddenAlertIds.has(a.id)) : mergedAlerts).map(a => {
             const isCrit = a.severity === "critical";
             const isWarn = a.severity === "warning";
             return (
@@ -3969,6 +3975,7 @@ const saveUserEdit = (userId: string) => {
                       {stoppedAlertIds.has(a.id) ? (language === "ar" ? "🔇 موقوف" : "🔇 Stopped") : isCrit ? (language === "ar" ? "حرج 🔥" : "Critical 🔥") : isWarn ? (language === "ar" ? "تحذير" : "Warning") : (language === "ar" ? "معلومة" : "Info")}
                     </Badge>
                     {isOwner && (
+                      <div className="flex flex-col gap-1">
                       <Btn variant="danger" className="h-6 px-2 text-xs" onClick={async () => {
                         // Delete from Firebase → removed for ALL users
                         void deleteAlertRemote(a.id);
@@ -3977,7 +3984,15 @@ const saveUserEdit = (userId: string) => {
                           stopEmergencySound(); setEmergencyActive(false);
                         }
                         showToast(language === "ar" ? "🗑 تم حذف التنبيه للجميع" : "🗑 Alert deleted for everyone", "info");
-                      }}>🗑</Btn>
+                      }}>🗑 {language === "ar" ? "حذف للكل" : "Del All"}</Btn>
+                      <button className="h-6 px-2 text-xs rounded-xl border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 transition" onClick={() => {
+                        const next = new Set(hiddenAlertIds);
+                        next.add(a.id);
+                        setHiddenAlertIds(next);
+                        localStorage.setItem("mustafaqa-hidden-alerts", JSON.stringify([...next]));
+                        showToast(language === "ar" ? "👁 مخفي عنك فقط" : "👁 Hidden from you only", "info");
+                      }}>👁 {language === "ar" ? "إخفاء مني" : "Hide me"}</button>
+                      </div>
                     )}
                   </div>
                     {/* Stop button: sender can stop their own, owner can stop any */}
@@ -4286,7 +4301,17 @@ const saveUserEdit = (userId: string) => {
         {(attendanceView === "list" || isGuard) && (
         <div className="space-y-2">
           {(isGuard && currentUser
-            ? mergedAttendance.filter(a => a.userId === currentUser.id)
+            ? (() => {
+                const now = new Date();
+                return mergedAttendance.filter(a => {
+                  if (a.userId !== currentUser.id) return false;
+                  const d = new Date(a.time.slice(0, 10));
+                  if (attendanceFilter === "today") return a.time.startsWith(today());
+                  if (attendanceFilter === "week") { const w = new Date(now); w.setDate(w.getDate() - 7); return d >= w; }
+                  if (attendanceFilter === "month") { const m = new Date(now); m.setDate(m.getDate() - 30); return d >= m; }
+                  return true;
+                });
+              })()
             : (() => {
                 const now = new Date();
                 return mergedAttendance.filter(a => {
