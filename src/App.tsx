@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { setDoc, doc, deleteDoc, getDocs, collection, query, where } from "firebase/firestore";
+import { setDoc, doc, deleteDoc, getDocs, collection, query, where, getDoc } from "firebase/firestore";
 import { firestore } from "./services/firebase";
 import AuthScreen from "./components/AuthScreen";
 import QrScannerModal from "./components/QrScannerModal";
 import VisitorManagementModal from "./components/VisitorManagementModal";
 import { playNormalAlertSound, registerNotificationServiceWorker, sendToServiceWorker, showSystemNotification, startEmergencySound, stopEmergencySound, vibrateDevice, vibrateEmergency } from "./services/notificationService";
-import { deleteAlertRemote, deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, savePendingUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers, saveConversation, subscribeReports, saveReport, deleteReportRemote, subscribeAlerts, saveAlert, subscribeVisitors, saveVisitor, updateVisitorRemote, deleteVisitorRemote, subscribeAttendance, saveAttendance, subscribeTasks, saveTask, updateTaskRemote, deleteTaskRemote, subscribeShifts, saveShift, updateShiftRemote, subscribeViolations, saveViolation, updateViolationRemote, subscribeSOSEvents, saveSOSEvent, updateSOSEventRemote, subscribePatrolRoutes, savePatrolRoute, deletePatrolRouteRemote, subscribeEntryLogs, saveEntryLog, deleteEntryLogRemote } from "./services/firebaseData";
+import { deleteAlertRemote, deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, savePendingUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers, saveConversation, subscribeReports, saveReport, deleteReportRemote, subscribeAlerts, saveAlert, subscribeVisitors, saveVisitor, updateVisitorRemote, deleteVisitorRemote, subscribeAttendance, saveAttendance, subscribeTasks, saveTask, updateTaskRemote, deleteTaskRemote, subscribeShifts, saveShift, updateShiftRemote, subscribeViolations, saveViolation, updateViolationRemote, subscribeSOSEvents, saveSOSEvent, updateSOSEventRemote, subscribePatrolRoutes, savePatrolRoute, deletePatrolRouteRemote, subscribeEntryLogs, saveEntryLog, deleteEntryLogRemote, setTenantId } from "./services/firebaseData";
 import { exportReportsPDF, exportShiftReportPDF, exportFullDashboardPDF } from "./services/pdfService";
 import { generateVisitorQR, generateBuildingQR } from "./services/qrService";
 import { analyzeData } from "./services/analyticsService";
@@ -14,6 +14,13 @@ import type { PatrolRound, PatrolRoute, PatrolCheckpoint } from "./types/securit
 import { initFCM, listenForegroundMessages, sendPushViaWorker } from "./services/fcmService";
 import { validateEmail } from "./services/emailVerification";
 import type { AlertLog, AppSnapshot, AttendanceRecord, AuditEntry, AuditSeverity, Building, ChatMessage, Conversation, EntryLog, Language, NewAccountPayload, Pair, Report, ReportComment, ReportStatus, Role, Shift, SOSEvent, Tab, Task, Toast, ToastTone, User, Violation, VisitorFormPayload, VisitorRecord } from "./types/security";
+
+// ─── Tenant: read slug from URL ───────────────────────────────────────────────
+// mustafaqa.vercel.app/alhazm → _urlSlug = "alhazm"
+// mustafaqa.vercel.app        → _urlSlug = "" (original مركز الشفلح)
+const _urlSlug = window.location.pathname.split("/").filter(Boolean)[0] ?? "";
+if (_urlSlug) setTenantId(_urlSlug); // scope all Firebase calls to /tenants/{slug}/
+const _keyPrefix = _urlSlug || "default";
 
 const STORAGE_KEY = "mustafaqa-v1";
 const SESSION_KEY = "mustafaqa-session-v1";
@@ -278,6 +285,59 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
+  // ─── Tenant validation (only when slug exists in URL) ─────────────────────
+  const [tenantReady, setTenantReady] = useState(!_urlSlug); // root = always ready
+  const [tenantName, setTenantName] = useState("");
+  const [tenantError, setTenantError] = useState<"notfound"|"inactive"|"expired"|null>(null);
+
+  useEffect(() => {
+    if (!_urlSlug) return; // original app — skip
+    getDoc(doc(firestore, "tenants", _urlSlug)).then(snap => {
+      if (!snap.exists()) { setTenantError("notfound"); return; }
+      const data = snap.data() as any;
+      if (!data.active) { setTenantError("inactive"); return; }
+      if (data.subscriptionEnd && new Date(data.subscriptionEnd) < new Date()) {
+        setTenantName(data.companyName ?? "");
+        setTenantError("expired"); return;
+      }
+      setTenantName(data.companyName ?? "");
+      setTenantReady(true);
+    }).catch(() => setTenantError("notfound"));
+  }, []);
+
+  if (_urlSlug && !tenantReady && !tenantError) {
+    return (
+      <div className="min-h-screen bg-[#040818] flex items-center justify-center">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-amber-400 border-t-transparent"/>
+      </div>
+    );
+  }
+  if (tenantError === "notfound") return (
+    <div className="min-h-screen bg-[#040818] flex items-center justify-center p-6 text-center">
+      <div className="space-y-3"><div className="text-6xl">🔒</div>
+        <div className="text-2xl font-black text-white">رابط غير صحيح</div>
+        <div className="text-slate-400 text-sm">هذا الرابط غير مخصص لأي شركة.<br/>تواصل مع مزود الخدمة.</div>
+      </div>
+    </div>
+  );
+  if (tenantError === "inactive") return (
+    <div className="min-h-screen bg-[#040818] flex items-center justify-center p-6 text-center">
+      <div className="space-y-3"><div className="text-6xl">⛔</div>
+        <div className="text-2xl font-black text-white">الحساب موقوف</div>
+        <div className="text-slate-400 text-sm">تم إيقاف هذه الشركة مؤقتاً.</div>
+      </div>
+    </div>
+  );
+  if (tenantError === "expired") return (
+    <div className="min-h-screen bg-[#040818] flex items-center justify-center p-6 text-center">
+      <div className="space-y-3"><div className="text-6xl">⏰</div>
+        <div className="text-2xl font-black text-white">انتهى الاشتراك</div>
+        <div className="text-amber-400 font-bold">{tenantName}</div>
+        <div className="text-slate-400 text-sm">تواصل مع مزود الخدمة لتجديد الاشتراك.</div>
+      </div>
+    </div>
+  );
+
   const [snapshot, setSnapshot] = useState<AppSnapshot>(() => loadSnapshot());
   const [language, setLanguage] = useState<Language>(() => {
     const saved = loadJson<Language>(LANGUAGE_KEY, "ar");
@@ -647,7 +707,9 @@ export default function App() {
   useEffect(() => {
     document.documentElement.lang = language;
     document.documentElement.dir = language === "ar" ? "rtl" : "ltr";
-    document.title = `${APP_NAME} | ${language === "ar" ? "نظام الأمن المتكامل" : "Integrated Security System"}`;
+    document.title = tenantName
+      ? `${tenantName} | ${APP_NAME}`
+      : `${APP_NAME} | ${language === "ar" ? "نظام الأمن المتكامل" : "Integrated Security System"}`;
   }, [language]);
 
   // Handle deep link from notification click (when app was closed)
@@ -5205,7 +5267,7 @@ const saveUserEdit = (userId: string) => {
             </div>
             <div>
               <div className="text-4xl font-black tracking-wide text-amber-400">{APP_NAME}</div>
-              <div className="text-sm font-semibold text-slate-400">منصة الأمن المتكاملة</div>
+              <div className="text-sm font-semibold text-slate-400">{tenantName || "منصة الأمن المتكاملة"}</div>
             </div>
           </div>
           <div className="text-center lg:text-end">
