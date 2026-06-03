@@ -164,6 +164,18 @@ export interface PatrolRoute {
 }
 
 // ─── Entry Log (walk-in visitors) ─────────────────────────────────────────────
+// ─── Tenant (Multi-Company) ────────────────────────────────────────────────────
+export interface Tenant {
+  slug: string;           // URL identifier e.g. "alshiflah"
+  companyName: string;    // Arabic name e.g. "مركز الشفلح"
+  companyNameEn: string;  // English name
+  logo?: string;          // Logo URL (optional)
+  maxUsers: number;       // Max allowed users
+  active: boolean;        // Is tenant active
+  subscriptionEnd: string;// ISO date e.g. "2027-01-01"
+  createdAt: string;
+}
+
 export interface EntryLog {
   id: string;
   name: string;

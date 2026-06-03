@@ -1,17 +1,27 @@
 import {
-  collection, deleteDoc, doc, getDocs,
+  collection, deleteDoc, doc, getDoc, getDocs,
   onSnapshot, orderBy, query, setDoc, updateDoc,
 } from "firebase/firestore";
 import type {
   AlertLog, AttendanceRecord, ChatMessage, Conversation,
-  Report, Shift, SOSEvent, Task, User, Violation, VisitorRecord,
+  EntryLog, PatrolRoute, Report, Shift, SOSEvent, Task,
+  Tenant, User, Violation, VisitorRecord,
 } from "../types/security";
 import { firestore } from "./firebase";
 
 const noop = () => {};
 
+// ─── Tenant ID (set once after login) ────────────────────────────────────────
+let _tenantId = "";
+export const setTenantId = (id: string) => { _tenantId = id; };
+export const getTenantId = () => _tenantId;
+
 // ─── Collections ──────────────────────────────────────────────────────────────
-const col = (name: string) => collection(firestore, name);
+// Scoped under /tenants/{tenantId}/{name}
+const col = (name: string) => {
+  if (!_tenantId) throw new Error("tenantId not set");
+  return collection(firestore, "tenants", _tenantId, name);
+};
 
 // ─── Generic helpers ──────────────────────────────────────────────────────────
 function subscribe<T>(
@@ -30,27 +40,47 @@ function subscribe<T>(
 }
 
 async function save(collectionName: string, id: string, data: object): Promise<void> {
-  try { await setDoc(doc(firestore, collectionName, id), data, { merge: true }); } catch { }
+  try {
+    await setDoc(doc(firestore, "tenants", _tenantId, collectionName, id), data, { merge: true });
+  } catch { }
 }
 
 async function remove(collectionName: string, id: string): Promise<void> {
-  try { await deleteDoc(doc(firestore, collectionName, id)); } catch { }
+  try {
+    await deleteDoc(doc(firestore, "tenants", _tenantId, collectionName, id));
+  } catch { }
 }
 
 async function update(collectionName: string, id: string, data: object): Promise<void> {
-  try { await updateDoc(doc(firestore, collectionName, id), data as any); } catch { }
+  try {
+    await updateDoc(doc(firestore, "tenants", _tenantId, collectionName, id), data as any);
+  } catch { }
 }
+
+// ─── Tenant Operations ────────────────────────────────────────────────────────
+export const getTenant = async (slug: string): Promise<Tenant | null> => {
+  try {
+    const snap = await getDoc(doc(firestore, "tenants", slug));
+    if (!snap.exists()) return null;
+    return { ...snap.data(), slug } as Tenant;
+  } catch { return null; }
+};
+
+export const saveTenant = async (t: Tenant): Promise<void> => {
+  try {
+    const { slug, ...data } = t;
+    await setDoc(doc(firestore, "tenants", slug), data, { merge: true });
+  } catch { }
+};
 
 // ─── Seed ─────────────────────────────────────────────────────────────────────
 export async function ensureRemoteSeed(users: User[], _conversations: Conversation[]) {
   try {
-    // Only seed owner account if approved_users is empty
     const usersSnap = await getDocs(col("approved_users"));
     if (usersSnap.empty) {
       const owner = users.find(u => u.role === "owner");
-      if (owner) await setDoc(doc(firestore, "approved_users", owner.id), owner);
+      if (owner) await save("approved_users", owner.id, owner);
     }
-    // Never seed reports/alerts/etc - those come from real usage
   } catch { }
 }
 
@@ -97,7 +127,6 @@ export const compressImage = (dataUrl: string, maxWidth = 800, quality = 0.7): P
 
 export const saveReport = async (r: Report): Promise<void> => {
   const firestoreReport = { ...r };
-  // Compress and save image directly in Firestore (JPEG ~100-200KB)
   if (firestoreReport.mediaUrl && firestoreReport.mediaUrl.startsWith("data:")) {
     try {
       firestoreReport.mediaUrl = await compressImage(firestoreReport.mediaUrl);
@@ -165,8 +194,6 @@ export const updateSOSEventRemote = (id: string, data: Partial<SOSEvent>) =>
   update("sos_events", id, data);
 
 // ─── Patrol Routes ────────────────────────────────────────────────────────────
-import type { PatrolRoute } from "../types/security";
-
 export const subscribePatrolRoutes = (cb: (r: PatrolRoute[]) => void) =>
   subscribe<PatrolRoute>("patrol_routes", cb);
 
@@ -174,8 +201,6 @@ export const savePatrolRoute = (r: PatrolRoute) => save("patrol_routes", r.id, r
 export const deletePatrolRouteRemote = (id: string) => remove("patrol_routes", id);
 
 // ─── Entry Logs ───────────────────────────────────────────────────────────────
-import type { EntryLog } from "../types/security";
-
 export const subscribeEntryLogs = (cb: (e: EntryLog[]) => void) =>
   subscribe<EntryLog>("entry_logs", cb, "time");
 

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { authContent, t } from "../data/translations";
-import type { Building, Language, NewAccountPayload } from "../types/security";
+import type { Building, Language, NewAccountPayload, Tenant } from "../types/security";
 
 type Props = {
   language: Language;
@@ -10,6 +10,7 @@ type Props = {
   onSignIn: (email: string, password: string) => Promise<void> | void;
   onCreateAccount: (payload: NewAccountPayload) => Promise<void> | void;
   onLanguageChange: (language: Language) => void;
+  tenant?: Tenant | null;
 };
 
 export default function AuthScreen({
@@ -20,6 +21,7 @@ export default function AuthScreen({
   onSignIn,
   onCreateAccount,
   onLanguageChange,
+  tenant,
 }: Props) {
   const [tab, setTab] = useState<"signin" | "create">("signin");
   const [showPassword, setShowPassword] = useState(false);
@@ -81,19 +83,32 @@ export default function AuthScreen({
             </div>
             <div className="mb-16 flex items-center gap-4">
               <div className="rounded-[22px] border border-amber-400/30 bg-[#111b3d] p-3 shadow-[0_0_28px_rgba(245,158,11,0.35)]">
-                <svg viewBox="0 0 24 24" className="h-10 w-10 text-amber-400" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path d="M12 3l7 3v5c0 5.25-3 8.5-7 10-4-1.5-7-4.75-7-10V6l7-3Z" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                {tenant?.logo
+                  ? <img src={tenant.logo} alt="logo" className="h-10 w-10 rounded-xl object-contain" />
+                  : <svg viewBox="0 0 24 24" className="h-10 w-10 text-amber-400" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <path d="M12 3l7 3v5c0 5.25-3 8.5-7 10-4-1.5-7-4.75-7-10V6l7-3Z" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                }
               </div>
               <div>
-                <div className="text-4xl font-black tracking-wide text-amber-400">QA SECURITY</div>
-                <div className="text-sm font-semibold text-slate-400">Integrated Security System</div>
+                {tenant && (
+                  <div className="text-2xl font-black text-white">
+                    {language === "ar" ? tenant.companyName : tenant.companyNameEn}
+                  </div>
+                )}
+                <div className={`font-semibold text-amber-400 ${tenant ? "text-sm" : "text-4xl font-black tracking-wide"}`}>
+                  QGuard {tenant ? "🛡️" : ""}
+                </div>
+                {!tenant && <div className="text-sm font-semibold text-slate-400">Integrated Security System</div>}
               </div>
             </div>
 
             <div className="max-w-xl space-y-5 pt-20 lg:pt-40">
               <h1 className="text-4xl font-black leading-tight text-white lg:text-6xl">{t(language, authContent.brandTitle)}</h1>
-              <div className="text-4xl font-black text-amber-400 lg:text-5xl">QA SECURITY</div>
+              <div className="text-4xl font-black text-amber-400 lg:text-5xl">
+                {tenant ? (language === "ar" ? tenant.companyName : tenant.companyNameEn) : "QA SECURITY"}
+              </div>
+              {tenant && <div className="text-sm text-slate-500">مدعوم بـ QGuard 🛡️</div>}
               <p className="max-w-lg text-base leading-8 text-slate-400 lg:text-lg">{t(language, authContent.brandSubtitle)}</p>
             </div>
           </div>
