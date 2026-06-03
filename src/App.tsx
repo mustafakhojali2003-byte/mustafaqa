@@ -5,7 +5,7 @@ import AuthScreen from "./components/AuthScreen";
 import QrScannerModal from "./components/QrScannerModal";
 import VisitorManagementModal from "./components/VisitorManagementModal";
 import { playNormalAlertSound, registerNotificationServiceWorker, sendToServiceWorker, showSystemNotification, startEmergencySound, stopEmergencySound, vibrateDevice, vibrateEmergency } from "./services/notificationService";
-import { deleteAlertRemote, deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, savePendingUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers, saveConversation, subscribeReports, saveReport, deleteReportRemote, subscribeAlerts, saveAlert, subscribeVisitors, saveVisitor, updateVisitorRemote, deleteVisitorRemote, subscribeAttendance, saveAttendance, subscribeTasks, saveTask, updateTaskRemote, deleteTaskRemote, subscribeShifts, saveShift, updateShiftRemote, subscribeViolations, saveViolation, updateViolationRemote, subscribeSOSEvents, saveSOSEvent, updateSOSEventRemote, subscribePatrolRoutes, savePatrolRoute, deletePatrolRouteRemote, subscribeEntryLogs, saveEntryLog, deleteEntryLogRemote, getTenant, setTenantId } from "./services/firebaseData";
+import { deleteAlertRemote, deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, savePendingUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers, saveConversation, subscribeReports, saveReport, deleteReportRemote, subscribeAlerts, saveAlert, subscribeVisitors, saveVisitor, updateVisitorRemote, deleteVisitorRemote, subscribeAttendance, saveAttendance, subscribeTasks, saveTask, updateTaskRemote, deleteTaskRemote, subscribeShifts, saveShift, updateShiftRemote, subscribeViolations, saveViolation, updateViolationRemote, subscribeSOSEvents, saveSOSEvent, updateSOSEventRemote, subscribePatrolRoutes, savePatrolRoute, deletePatrolRouteRemote, subscribeEntryLogs, saveEntryLog, deleteEntryLogRemote } from "./services/firebaseData";
 import { exportReportsPDF, exportShiftReportPDF, exportFullDashboardPDF } from "./services/pdfService";
 import { generateVisitorQR, generateBuildingQR } from "./services/qrService";
 import { analyzeData } from "./services/analyticsService";
@@ -13,21 +13,14 @@ import { exportFullExcel, exportAttendanceExcel, exportReportsExcel } from "./se
 import type { PatrolRound, PatrolRoute, PatrolCheckpoint } from "./types/security";
 import { initFCM, listenForegroundMessages, sendPushViaWorker } from "./services/fcmService";
 import { validateEmail } from "./services/emailVerification";
-import type { AlertLog, AppSnapshot, AttendanceRecord, AuditEntry, AuditSeverity, Building, ChatMessage, Conversation, EntryLog, Language, NewAccountPayload, Pair, Report, ReportComment, ReportStatus, Role, Shift, SOSEvent, Tab, Task, Tenant, Toast, ToastTone, User, Violation, VisitorFormPayload, VisitorRecord } from "./types/security";
+import type { AlertLog, AppSnapshot, AttendanceRecord, AuditEntry, AuditSeverity, Building, ChatMessage, Conversation, EntryLog, Language, NewAccountPayload, Pair, Report, ReportComment, ReportStatus, Role, Shift, SOSEvent, Tab, Task, Toast, ToastTone, User, Violation, VisitorFormPayload, VisitorRecord } from "./types/security";
 
-// ─── Tenant slug from URL ─────────────────────────────────────────────────────
-// URL format: mustafaqa.vercel.app/alshiflah
-const _urlSlug = (() => {
-  const parts = window.location.pathname.split("/").filter(Boolean);
-  return parts[0] ?? "";
-})();
-
-const STORAGE_KEY = `mustafaqa-v1-${_urlSlug || "default"}`;
-const SESSION_KEY = `mustafaqa-session-v1-${_urlSlug || "default"}`;
+const STORAGE_KEY = "mustafaqa-v1";
+const SESSION_KEY = "mustafaqa-session-v1";
 const OWNER_ID = "owner-mustafa-2024"; // owner is immutable
 const LANGUAGE_KEY = "mustafaqa-lang-v1";
-const SYNC_KEY = `mustafaqa-sync-v1-${_urlSlug || "default"}`;
-const ACTIVE_KEY = `mustafaqa-active-v1-${_urlSlug || "default"}`;
+const SYNC_KEY = "mustafaqa-sync-v1";
+const ACTIVE_KEY = "mustafaqa-active-v1";
 const REPORTS_PER_PAGE = 6;
 const VISITOR_REMINDER_MINUTES = 30;
 const VISITOR_ARRIVAL_REMIND_MINUTES = 15;
@@ -285,71 +278,6 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  // ─── Tenant Loading ──────────────────────────────────────────────────────────
-  const [tenant, setTenant] = useState<Tenant | null>(null);
-  const [tenantStatus, setTenantStatus] = useState<"loading" | "ready" | "notfound" | "inactive" | "expired">("loading");
-
-  useEffect(() => {
-    if (!_urlSlug) { setTenantStatus("notfound"); return; }
-    getTenant(_urlSlug).then(t => {
-      if (!t) { setTenantStatus("notfound"); return; }
-      if (!t.active) { setTenantStatus("inactive"); return; }
-      if (t.subscriptionEnd && new Date(t.subscriptionEnd) < new Date()) { setTenant(t); setTenantStatus("expired"); return; }
-      setTenantId(_urlSlug);
-      setTenant(t);
-      setTenantStatus("ready");
-    });
-  }, []);
-
-  // ─── Tenant Screens ───────────────────────────────────────────────────────────
-  if (tenantStatus === "loading") {
-    return (
-      <div className="min-h-screen bg-[#040818] flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-amber-400 border-t-transparent mx-auto" />
-          <div className="text-slate-400">جارٍ التحقق...</div>
-        </div>
-      </div>
-    );
-  }
-  if (tenantStatus === "notfound") {
-    return (
-      <div className="min-h-screen bg-[#040818] flex items-center justify-center p-6">
-        <div className="text-center space-y-4 max-w-sm">
-          <div className="text-6xl">🔒</div>
-          <div className="text-2xl font-black text-white">رابط غير صحيح</div>
-          <div className="text-slate-400">هذا الرابط غير مخصص لأي شركة. يرجى التواصل مع مزود الخدمة.</div>
-          <div className="text-xs text-slate-600 font-mono">{window.location.pathname}</div>
-        </div>
-      </div>
-    );
-  }
-  if (tenantStatus === "inactive") {
-    return (
-      <div className="min-h-screen bg-[#040818] flex items-center justify-center p-6">
-        <div className="text-center space-y-4 max-w-sm">
-          <div className="text-6xl">⛔</div>
-          <div className="text-2xl font-black text-white">الحساب موقوف</div>
-          <div className="text-slate-400">تم إيقاف هذه الشركة مؤقتاً. يرجى التواصل مع الدعم.</div>
-        </div>
-      </div>
-    );
-  }
-  if (tenantStatus === "expired") {
-    return (
-      <div className="min-h-screen bg-[#040818] flex items-center justify-center p-6">
-        <div className="text-center space-y-4 max-w-sm">
-          <div className="text-6xl">⏰</div>
-          <div className="text-2xl font-black text-white">انتهى الاشتراك</div>
-          <div className="text-slate-400">
-            انتهى اشتراك <span className="text-amber-400 font-bold">{tenant?.companyName}</span> بتاريخ {tenant?.subscriptionEnd?.slice(0,10)}
-          </div>
-          <div className="text-sm text-slate-500">يرجى التواصل مع الدعم لتجديد الاشتراك</div>
-        </div>
-      </div>
-    );
-  }
-
   const [snapshot, setSnapshot] = useState<AppSnapshot>(() => loadSnapshot());
   const [language, setLanguage] = useState<Language>(() => {
     const saved = loadJson<Language>(LANGUAGE_KEY, "ar");
@@ -719,10 +647,8 @@ export default function App() {
   useEffect(() => {
     document.documentElement.lang = language;
     document.documentElement.dir = language === "ar" ? "rtl" : "ltr";
-    document.title = tenant
-      ? `${language === "ar" ? tenant.companyName : tenant.companyNameEn} | ${APP_NAME}`
-      : `${APP_NAME} | ${language === "ar" ? "نظام الأمن المتكامل" : "Integrated Security System"}`;
-  }, [language, tenant]);
+    document.title = `${APP_NAME} | ${language === "ar" ? "نظام الأمن المتكامل" : "Integrated Security System"}`;
+  }, [language]);
 
   // Handle deep link from notification click (when app was closed)
   useEffect(() => {
@@ -5255,7 +5181,7 @@ const saveUserEdit = (userId: string) => {
 
   if (!currentUser) {
     return (
-      <AuthScreen language={language} buildings={snapshot.buildings} errorMessage={authError} infoMessage={authInfo} onSignIn={handleSignIn} onCreateAccount={handleCreateAccount} onLanguageChange={lang => { setLanguage(lang); document.documentElement.dir = lang === "ar" ? "rtl" : "ltr"; window.localStorage.setItem(LANGUAGE_KEY, lang); }} tenant={tenant} />
+      <AuthScreen language={language} buildings={snapshot.buildings} errorMessage={authError} infoMessage={authInfo} onSignIn={handleSignIn} onCreateAccount={handleCreateAccount} onLanguageChange={lang => { setLanguage(lang); document.documentElement.dir = lang === "ar" ? "rtl" : "ltr"; window.localStorage.setItem(LANGUAGE_KEY, lang); }} />
     );
   }
 
@@ -5278,15 +5204,8 @@ const saveUserEdit = (userId: string) => {
               <svg viewBox="0 0 24 24" className="h-10 w-10 text-amber-400" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3l7 3v5c0 5.25-3 8.5-7 10-4-1.5-7-4.75-7-10V6l7-3Z" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </div>
             <div>
-              {tenant && (
-                <div className="text-lg font-black text-white leading-tight">
-                  {language === "ar" ? tenant.companyName : tenant.companyNameEn}
-                </div>
-              )}
-              <div className={`font-black tracking-wide text-amber-400 ${tenant ? "text-sm" : "text-4xl"}`}>
-                {APP_NAME} 🛡️
-              </div>
-              {!tenant && <div className="text-sm font-semibold text-slate-400">منصة الأمن المتكاملة</div>}
+              <div className="text-4xl font-black tracking-wide text-amber-400">{APP_NAME}</div>
+              <div className="text-sm font-semibold text-slate-400">منصة الأمن المتكاملة</div>
             </div>
           </div>
           <div className="text-center lg:text-end">
