@@ -13,6 +13,7 @@ import { exportFullExcel, exportAttendanceExcel, exportReportsExcel } from "./se
 import type { PatrolRound, PatrolRoute, PatrolCheckpoint } from "./types/security";
 import { initFCM, listenForegroundMessages, sendPushViaWorker } from "./services/fcmService";
 import { validateEmail } from "./services/emailVerification";
+import { sendResetEmail } from "./services/emailService";
 import type { AlertLog, AppSnapshot, AttendanceRecord, AuditEntry, AuditSeverity, Building, ChatMessage, Conversation, EntryLog, Language, NewAccountPayload, Pair, Report, ReportComment, ReportStatus, Role, Shift, SOSEvent, Tab, Task, Toast, ToastTone, User, Violation, VisitorFormPayload, VisitorRecord } from "./types/security";
 
 // ─── Tenant: read slug from URL ───────────────────────────────────────────────
@@ -1194,6 +1195,25 @@ function AppContent({ tenantName }: { tenantName: string }) {
   const pushSync = useCallback((action: string) => setSyncQueue(prev => [...prev, `${nowStamp()}|${action}`]), []);
 
   // Auth
+  const handleForgotPassword = async (email: string) => {
+    setAuthError(null); setAuthInfo(null);
+    const user = approvedUsers.find(u => u.email.toLowerCase() === email.trim().toLowerCase());
+    if (!user) { setAuthError(language === "ar" ? "البريد غير مسجل" : "Email not registered"); return; }
+    // Generate 6-digit reset code
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const expiresAt = Date.now() + 15 * 60 * 1000; // 15 min
+    try {
+      await setDoc(doc(firestore, _urlSlug ? `tenants/${_urlSlug}/reset_codes` : "reset_codes", user.id), {
+        code, email: user.email, expiresAt, used: false,
+      });
+      const sent = await sendResetEmail(user.email, user.name, code);
+      if (sent) setAuthInfo(language === "ar" ? "تم إرسال كود الاستعادة إلى بريدك" : "Reset code sent to your email");
+      else setAuthError(language === "ar" ? "تعذر إرسال البريد. تواصل مع المالك." : "Could not send email. Contact owner.");
+    } catch {
+      setAuthError(language === "ar" ? "حدث خطأ" : "An error occurred");
+    }
+  };
+
   const handleSignIn = async (email: string, password: string) => {
     setAuthError(null); setAuthInfo(null);
     const user = snapshot.users.find(u => u.email.toLowerCase() === email.trim().toLowerCase());
@@ -5427,7 +5447,7 @@ const saveUserEdit = (userId: string) => {
 
   if (!currentUser) {
     return (
-      <AuthScreen language={language} buildings={snapshot.buildings} errorMessage={authError} infoMessage={authInfo} onSignIn={handleSignIn} onCreateAccount={handleCreateAccount} onLanguageChange={lang => { setLanguage(lang); document.documentElement.dir = lang === "ar" ? "rtl" : "ltr"; window.localStorage.setItem(LANGUAGE_KEY, lang); }} />
+      <AuthScreen language={language} buildings={snapshot.buildings} errorMessage={authError} infoMessage={authInfo} onSignIn={handleSignIn} onCreateAccount={handleCreateAccount} onLanguageChange={lang => { setLanguage(lang); document.documentElement.dir = lang === "ar" ? "rtl" : "ltr"; window.localStorage.setItem(LANGUAGE_KEY, lang); }} companyName={tenantName} onForgotPassword={handleForgotPassword} />
     );
   }
 

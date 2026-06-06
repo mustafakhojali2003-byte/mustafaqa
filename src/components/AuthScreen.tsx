@@ -10,6 +10,8 @@ type Props = {
   onSignIn: (email: string, password: string) => Promise<void> | void;
   onCreateAccount: (payload: NewAccountPayload) => Promise<void> | void;
   onLanguageChange: (language: Language) => void;
+  companyName?: string;
+  onForgotPassword?: (email: string) => Promise<void> | void;
 };
 
 export default function AuthScreen({
@@ -20,6 +22,8 @@ export default function AuthScreen({
   onSignIn,
   onCreateAccount,
   onLanguageChange,
+  companyName,
+  onForgotPassword,
 }: Props) {
   const [tab, setTab] = useState<"signin" | "create">("signin");
   const [showPassword, setShowPassword] = useState(false);
@@ -86,14 +90,15 @@ export default function AuthScreen({
                 </svg>
               </div>
               <div>
-                <div className="text-4xl font-black tracking-wide text-amber-400">QA SECURITY</div>
-                <div className="text-sm font-semibold text-slate-400">Integrated Security System</div>
+                {companyName && <div className="text-2xl font-black text-white">{companyName}</div>}
+                <div className={`font-black tracking-wide text-amber-400 ${companyName ? "text-sm" : "text-4xl"}`}>QGuard 🛡️</div>
+                {!companyName && <div className="text-sm font-semibold text-slate-400">Integrated Security System</div>}
               </div>
             </div>
 
             <div className="max-w-xl space-y-5 pt-20 lg:pt-40">
               <h1 className="text-4xl font-black leading-tight text-white lg:text-6xl">{t(language, authContent.brandTitle)}</h1>
-              <div className="text-4xl font-black text-amber-400 lg:text-5xl">QA SECURITY</div>
+              <div className="text-4xl font-black text-amber-400 lg:text-5xl">{companyName || "QA SECURITY"}</div>
               <p className="max-w-lg text-base leading-8 text-slate-400 lg:text-lg">{t(language, authContent.brandSubtitle)}</p>
             </div>
           </div>
