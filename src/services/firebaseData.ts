@@ -181,6 +181,23 @@ export const subscribePatrolRoutes = (cb: (r: PatrolRoute[]) => void) =>
 export const savePatrolRoute = (r: PatrolRoute) => save("patrol_routes", r.id, r);
 export const deletePatrolRouteRemote = (id: string) => remove("patrol_routes", id);
 
+// ─── Platform Feedback (always root-level, shared across all tenants) ──────────
+import { addDoc, serverTimestamp } from "firebase/firestore";
+
+export const sendPlatformFeedback = async (data: {
+  tenantSlug: string; userName: string; userEmail: string; role: string;
+  message: string; type: string;
+}): Promise<boolean> => {
+  try {
+    await addDoc(collection(firestore, "platform_feedback"), {
+      ...data,
+      createdAt: new Date().toISOString(),
+      read: false,
+    });
+    return true;
+  } catch { return false; }
+};
+
 // ─── System Settings ──────────────────────────────────────────────────────────
 export const saveSystemSettings = (data: object) => save("settings", "system", data);
 

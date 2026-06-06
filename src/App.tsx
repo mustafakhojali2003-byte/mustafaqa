@@ -5,7 +5,7 @@ import AuthScreen from "./components/AuthScreen";
 import QrScannerModal from "./components/QrScannerModal";
 import VisitorManagementModal from "./components/VisitorManagementModal";
 import { playNormalAlertSound, registerNotificationServiceWorker, sendToServiceWorker, showSystemNotification, startEmergencySound, stopEmergencySound, vibrateDevice, vibrateEmergency } from "./services/notificationService";
-import { deleteAlertRemote, deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, savePendingUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers, saveConversation, subscribeReports, saveReport, deleteReportRemote, subscribeAlerts, saveAlert, subscribeVisitors, saveVisitor, updateVisitorRemote, deleteVisitorRemote, subscribeAttendance, saveAttendance, subscribeTasks, saveTask, updateTaskRemote, deleteTaskRemote, subscribeShifts, saveShift, updateShiftRemote, subscribeViolations, saveViolation, updateViolationRemote, subscribeSOSEvents, saveSOSEvent, updateSOSEventRemote, subscribePatrolRoutes, savePatrolRoute, deletePatrolRouteRemote, subscribeEntryLogs, saveEntryLog, deleteEntryLogRemote, setTenantId, saveSystemSettings, subscribeSystemSettings } from "./services/firebaseData";
+import { deleteAlertRemote, deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, savePendingUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers, saveConversation, subscribeReports, saveReport, deleteReportRemote, subscribeAlerts, saveAlert, subscribeVisitors, saveVisitor, updateVisitorRemote, deleteVisitorRemote, subscribeAttendance, saveAttendance, subscribeTasks, saveTask, updateTaskRemote, deleteTaskRemote, subscribeShifts, saveShift, updateShiftRemote, subscribeViolations, saveViolation, updateViolationRemote, subscribeSOSEvents, saveSOSEvent, updateSOSEventRemote, subscribePatrolRoutes, savePatrolRoute, deletePatrolRouteRemote, subscribeEntryLogs, saveEntryLog, deleteEntryLogRemote, setTenantId, saveSystemSettings, subscribeSystemSettings, sendPlatformFeedback } from "./services/firebaseData";
 import { exportReportsPDF, exportShiftReportPDF, exportFullDashboardPDF } from "./services/pdfService";
 import { generateVisitorQR, generateBuildingQR } from "./services/qrService";
 import { analyzeData } from "./services/analyticsService";
@@ -84,6 +84,10 @@ function hashPassword(value: string): string {
   let hash = 5381;
   for (let i = 0; i < value.length; i++) hash = (hash * 33) ^ value.charCodeAt(i);
   return `h${(hash >>> 0).toString(16)}`;
+}
+// Deterministic conversation ID for a PAIR of users — both sides compute the same ID
+function pairConvId(a: string, b: string): string {
+  return `c-${[a, b].sort().join("--")}`;
 }
 function formatTime(dateStr: string, use24h: boolean): string {
   try {
@@ -384,6 +388,8 @@ export default function App() {
 
 function AppContent({ tenantName }: { tenantName: string }) {
   const [snapshot, setSnapshot] = useState<AppSnapshot>(() => loadSnapshot());
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackType, setFeedbackType] = useState<"bug"|"suggestion"|"other">("bug");
   const [language, setLanguage] = useState<Language>(() => {
     const saved = loadJson<Language>(LANGUAGE_KEY, "ar");
     // Apply dir immediately on load
@@ -490,7 +496,7 @@ function AppContent({ tenantName }: { tenantName: string }) {
   const [showAddUserForm, setShowAddUserForm] = useState(false);
   const [directAddForm, setDirectAddForm] = useState({ name: "", email: "", phone: "", password: "", role: "guard" as Role, buildingId: "" });
   const [editUserId, setEditUserId] = useState<string | null>(null);
-  const [editUserForm, setEditUserForm] = useState({ name: "", phone: "", buildingId: "", role: "guard" as Role });
+  const [editUserForm, setEditUserForm] = useState({ name: "", phone: "", buildingId: "", role: "guard" as Role, email: "", securityNumber: "" });
   const [changePwForm, setChangePwForm] = useState({ current: "", newPw: "", confirm: "" });
   const [use24h, setUse24h] = useState<boolean>(() => {
     try { return window.localStorage.getItem("mustafaqa-24h") === "true"; } catch { return false; }
@@ -689,48 +695,38 @@ function AppContent({ tenantName }: { tenantName: string }) {
   const visibleConversations = useMemo(() => {
     if (!currentUser) return [];
     const chatOpen = snapshot.systemSettings.chatOpenToAll ?? false;
-    // Owner: sees all users always
-    if (currentUser.role === "owner") {
-      const activeUsers = approvedUsers
-        .filter(u => u.id !== currentUser.id && !deletedUserIds.has(u.id) && !blockedUserIds.has(u.id));
-      const seen = new Set<string>();
-      return activeUsers
-        .filter(u => { if (seen.has(u.id)) return false; seen.add(u.id); return true; })
-        .map(u => {
-          const existing = conversationsSource.find(c => c.participantId === u.id);
-          if (existing) return { ...existing, participantName: u.name, participantRole: u.role as Role };
-          return { id: `c-${u.id}`, participantId: u.id, participantName: u.name, participantRole: u.role as Role, messages: [] };
-        })
-        .sort((a, b) => {
-          const aTime = a.messages?.[a.messages.length - 1]?.time ?? "";
-          const bTime = b.messages?.[b.messages.length - 1]?.time ?? "";
-          return bTime.localeCompare(aTime);
-        });
-    }
-    // Admin: sees owner + (if chatOpenToAll: guards too)
-    if (currentUser.role === "admin") {
-      const contacts = approvedUsers.filter(u =>
-        u.id !== currentUser.id && !deletedUserIds.has(u.id) && !blockedUserIds.has(u.id) &&
-        (u.role === "owner" || (chatOpen && u.role === "guard"))
-      );
-      return contacts.map(u => {
-        const existing = conversationsSource.find(c => c.participantId === u.id);
-        const conv = existing ?? { id: `c-${u.id}`, participantId: u.id, participantName: u.name, participantRole: u.role as Role, messages: [] };
-        return { ...conv, participantName: u.name, participantRole: u.role as Role };
-      });
-    }
-    // Guard: owner + admins + (if chatOpenToAll: other guards too)
-    const contacts = approvedUsers.filter(u =>
-      u.id !== currentUser.id && !deletedUserIds.has(u.id) && !blockedUserIds.has(u.id) &&
-      (u.role === "owner" || u.role === "admin" || (chatOpen && u.role === "guard"))
-    );
-    return contacts.map(u => {
-      const convKey = u.role === "owner" ? currentUser.id : u.id;
-      const existing = conversationsSource.find(c => c.participantId === convKey || c.participantId === u.id);
-      const conv = existing ?? { id: `c-${convKey}`, participantId: convKey, participantName: u.name, participantRole: u.role as Role, messages: [] };
-      return { ...conv, participantName: u.name, participantRole: u.role as Role };
+    const owner = approvedUsers.find(u => u.role === "owner");
+
+    // Build a conversation for the current user ↔ another user (deterministic paired ID)
+    const makeConv = (other: User): Conversation => {
+      const id = pairConvId(currentUser.id, other.id);
+      const existing = conversationsSource.find(c => c.id === id);
+      return existing
+        ? { ...existing, id, participantId: other.id, participantName: other.name, participantRole: other.role as Role }
+        : { id, participantId: other.id, participantName: other.name, participantRole: other.role as Role, messages: [] };
+    };
+
+    const sortByRecent = (list: Conversation[]) => list.sort((a, b) => {
+      const at = a.messages?.[a.messages.length - 1]?.time ?? "";
+      const bt = b.messages?.[b.messages.length - 1]?.time ?? "";
+      return bt.localeCompare(at);
     });
-  }, [approvedUsers, conversationsSource, currentUser, snapshot.systemSettings.chatOpenToAll]);
+
+    // Owner: sees a private conversation with every user
+    if (currentUser.role === "owner") {
+      const others = approvedUsers.filter(u => u.id !== currentUser.id && !deletedUserIds.has(u.id) && !blockedUserIds.has(u.id));
+      return sortByRecent(others.map(makeConv));
+    }
+
+    // Chat open to all: everyone ↔ everyone (still private per pair)
+    if (chatOpen) {
+      const others = approvedUsers.filter(u => u.id !== currentUser.id && !deletedUserIds.has(u.id) && !blockedUserIds.has(u.id));
+      return sortByRecent(others.map(makeConv));
+    }
+
+    // Restricted (default): non-owner users see ONLY the owner
+    return owner ? [makeConv(owner)] : [];
+  }, [approvedUsers, conversationsSource, currentUser, deletedUserIds, blockedUserIds, snapshot.systemSettings.chatOpenToAll]);
 
   const activeConversation = useMemo(() => visibleConversations.find(c => c.id === conversationId) ?? visibleConversations[0], [conversationId, visibleConversations]);
   const visibleTasks = useMemo(() => isGuard && currentUser ? mergedTasks.filter(t => t.assignedTo === currentUser.id || t.assignedTo === currentUser.email) : mergedTasks, [currentUser, isGuard, mergedTasks]);
@@ -1465,9 +1461,8 @@ function AppContent({ tenantName }: { tenantName: string }) {
     // Save to Firebase immediately
     void saveConversation(updated);
     // Push notification to recipient via Worker
-    const recipientId = currentUser.role === "owner" || currentUser.role === "admin"
-      ? activeConversation.participantId
-      : approvedUsers.find(u => u.role === "owner")?.id;
+    // Recipient is always the conversation's participant (the other person)
+    const recipientId = activeConversation.participantId;
     if (recipientId) {
       void sendPushViaWorker(
         `💬 ${currentUser.name}`,
@@ -3497,6 +3492,8 @@ const saveUserEdit = (userId: string) => {
       ...u,
       name: editUserForm.name.trim() || u.name,
       phone: editUserForm.phone.trim() || u.phone,
+      email: editUserForm.email.trim() || u.email,
+      securityNumber: editUserForm.securityNumber.trim() || u.securityNumber,
       role: editUserForm.role,
       assignedBuildingId: editUserForm.buildingId || u.assignedBuildingId,
     };
@@ -3653,7 +3650,7 @@ const saveUserEdit = (userId: string) => {
                         <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => {
                           if (isEditing) { setEditUserId(null); return; }
                           setEditUserId(u.id);
-                          setEditUserForm({ name: u.name, phone: u.phone, buildingId: u.assignedBuildingId ?? "", role: u.role });
+                          setEditUserForm({ name: u.name, phone: u.phone, buildingId: u.assignedBuildingId ?? "", role: u.role, email: u.email ?? "", securityNumber: u.securityNumber ?? "" });
                         }}>{isEditing ? (language === "ar" ? "إلغاء" : "Cancel") : (language === "ar" ? "✏️ تعديل" : "✏️ Edit")}</Btn>
                         {/* Restore sound button */}
                         <Btn variant="secondary" className="h-8 px-3 text-xs" onClick={() => {
@@ -3673,6 +3670,8 @@ const saveUserEdit = (userId: string) => {
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                       <div><Lbl>{language === "ar" ? "الاسم" : "Name"}</Lbl><TxtInput value={editUserForm.name} onChange={e => setEditUserForm(p => ({ ...p, name: e.target.value }))} /></div>
                       <div><Lbl>{language === "ar" ? "الهاتف" : "Phone"}</Lbl><TxtInput value={editUserForm.phone} onChange={e => setEditUserForm(p => ({ ...p, phone: e.target.value }))} /></div>
+                      <div><Lbl>{language === "ar" ? "البريد الإلكتروني" : "Email"}</Lbl><TxtInput value={editUserForm.email} onChange={e => setEditUserForm(p => ({ ...p, email: e.target.value }))} /></div>
+                      <div><Lbl>{language === "ar" ? "رقم الأمان" : "Security Number"}</Lbl><TxtInput value={editUserForm.securityNumber} onChange={e => setEditUserForm(p => ({ ...p, securityNumber: e.target.value }))} /></div>
                       <div><Lbl>{language === "ar" ? "الدور" : "Role"}</Lbl>
                         <SelInput value={editUserForm.role} onChange={e => setEditUserForm(p => ({ ...p, role: e.target.value as Role }))}>
                           <option value="guard">{language === "ar" ? "حارس أمن" : "Guard"}</option>
@@ -5435,6 +5434,36 @@ const saveUserEdit = (userId: string) => {
             <TxtInput type="number" className="max-w-[120px]" min="5" max="120" value={snapshot.systemSettings.visitorReminderMinutes} onChange={e => mutate(prev => ({ ...prev, systemSettings: { ...prev.systemSettings, visitorReminderMinutes: Number(e.target.value) } }))} />
             <span className="text-sm text-slate-400">{language === "ar" ? "دقيقة" : "minutes"}</span>
           </div>
+        </div>
+      </Panel>
+
+      <Panel>
+        <div className="mb-4 font-black text-amber-400">💬 {language === "ar" ? "إرسال ملاحظة / إبلاغ عن خطأ" : "Send Feedback / Report Bug"}</div>
+        <div className="space-y-3">
+          <p className="text-sm text-slate-400">{language === "ar" ? "إذا واجهت مشكلة أو لديك اقتراح، أرسله مباشرة لفريق التطوير." : "Found a bug or have a suggestion? Send it to the dev team."}</p>
+          <div className="flex gap-2 flex-wrap">
+            {(["bug","suggestion","other"] as const).map(ft => (
+              <button key={ft} type="button" onClick={() => setFeedbackType(ft)}
+                className={`px-4 py-2 rounded-2xl text-sm font-bold border transition ${feedbackType === ft ? "bg-amber-500 text-black border-amber-500" : "bg-white/5 text-slate-300 border-white/10"}`}>
+                {ft === "bug" ? (language==="ar"?"🐛 خطأ":"🐛 Bug") : ft === "suggestion" ? (language==="ar"?"💡 اقتراح":"💡 Suggestion") : (language==="ar"?"📝 أخرى":"📝 Other")}
+              </button>
+            ))}
+          </div>
+          <TxtArea rows={4} value={feedbackText} onChange={e => setFeedbackText(e.target.value)}
+            placeholder={language === "ar" ? "اكتب ملاحظتك هنا..." : "Write your feedback here..."} />
+          <Btn className="w-full" onClick={async () => {
+            if (!feedbackText.trim()) { showToast(language==="ar"?"اكتب رسالتك أولاً":"Write a message first", "danger"); return; }
+            const ok = await sendPlatformFeedback({
+              tenantSlug: _urlSlug || "default",
+              userName: currentUser?.name ?? "Unknown",
+              userEmail: currentUser?.email ?? "",
+              role: currentUser?.role ?? "",
+              message: feedbackText.trim(),
+              type: feedbackType,
+            });
+            if (ok) { showToast(language==="ar"?"✅ تم إرسال ملاحظتك، شكراً!":"✅ Feedback sent, thank you!", "success"); setFeedbackText(""); }
+            else showToast(language==="ar"?"❌ تعذّر الإرسال":"❌ Failed to send", "danger");
+          }}>📤 {language === "ar" ? "إرسال الملاحظة" : "Send Feedback"}</Btn>
         </div>
       </Panel>
 
