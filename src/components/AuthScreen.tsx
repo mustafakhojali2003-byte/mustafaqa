@@ -12,6 +12,7 @@ type Props = {
   onLanguageChange: (language: Language) => void;
   companyName?: string;
   onForgotPassword?: (email: string) => Promise<void> | void;
+  onResetPassword?: (email: string, code: string, newPassword: string) => Promise<void> | void;
 };
 
 export default function AuthScreen({
@@ -24,6 +25,7 @@ export default function AuthScreen({
   onLanguageChange,
   companyName,
   onForgotPassword,
+  onResetPassword,
 }: Props) {
   const [tab, setTab] = useState<"signin" | "create">("signin");
   const [showPassword, setShowPassword] = useState(false);
@@ -44,6 +46,17 @@ export default function AuthScreen({
   const submitSignIn = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     await onSignIn(signInForm.email, signInForm.password);
+  };
+
+  // ─── Forgot password ───────────────────────────────────────────────────────
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotSent, setForgotSent] = useState(false);
+  const submitForgot = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) return;
+    await onForgotPassword?.(forgotEmail);
+    setForgotSent(true);
   };
 
   const submitCreateAccount = async (event: FormEvent<HTMLFormElement>) => {
@@ -165,6 +178,10 @@ export default function AuthScreen({
                     </svg>
                     {t(language, authContent.signInTab)}
                   </button>
+                  <button type="button" onClick={() => { setForgotMode(true); setForgotSent(false); setForgotEmail(signInForm.email); }}
+                    className="w-full text-center text-sm text-amber-400 hover:text-amber-300 transition">
+                    {language === "ar" ? "نسيت كلمة المرور؟" : "Forgot password?"}
+                  </button>
                 </form>
               ) : (
                 <form onSubmit={submitCreateAccount} className="space-y-4">
@@ -243,6 +260,79 @@ export default function AuthScreen({
           </div>
         </div>
       </div>
+
+      {/* ── Forgot Password Modal ── */}
+      {forgotMode && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.85)" }}
+          onClick={e => { if (e.target === e.currentTarget) setForgotMode(false); }}>
+          <div className="w-full max-w-md rounded-[28px] border border-white/10 bg-[#0b132b] p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="text-xl font-black text-white">🔑 {language === "ar" ? "استعادة كلمة المرور" : "Reset Password"}</div>
+              <button onClick={() => setForgotMode(false)} className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 border border-white/10 text-slate-400">✕</button>
+            </div>
+
+            {!forgotSent ? (
+              <form onSubmit={submitForgot} className="space-y-4">
+                <p className="text-sm text-slate-400">{language === "ar" ? "أدخل بريدك وسنرسل لك كوداً لاستعادة كلمة المرور." : "Enter your email and we'll send you a reset code."}</p>
+                <input value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} type="email"
+                  placeholder="example@qa.com"
+                  className="h-12 w-full rounded-2xl border border-white/10 bg-[#070d22] px-4 text-white outline-none placeholder:text-slate-500 focus:border-amber-400/60" />
+                <button type="submit" className="h-12 w-full rounded-2xl bg-amber-500 font-black text-black hover:bg-amber-400 transition">
+                  📧 {language === "ar" ? "إرسال الكود" : "Send Code"}
+                </button>
+              </form>
+            ) : (
+              <ResetCodeForm
+                language={language}
+                email={forgotEmail}
+                onReset={async (code, newPass) => { await onResetPassword?.(forgotEmail, code, newPass); setForgotMode(false); }}
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+// ─── Reset Code + New Password Form ───────────────────────────────────────────
+function ResetCodeForm({ language, email, onReset }: {
+  language: Language;
+  email: string;
+  onReset: (code: string, newPassword: string) => Promise<void> | void;
+}) {
+  const [code, setCode] = useState("");
+  const [newPass, setNewPass] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [err, setErr] = useState("");
+
+  const submit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (code.length !== 6) return setErr(language === "ar" ? "الكود مكون من 6 أرقام" : "Code must be 6 digits");
+    if (newPass.length < 6) return setErr(language === "ar" ? "كلمة المرور 6 أحرف على الأقل" : "Password min 6 chars");
+    if (newPass !== confirm) return setErr(language === "ar" ? "كلمتا المرور غير متطابقتين" : "Passwords don't match");
+    setErr("");
+    void onReset(code, newPass);
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+        ✉️ {language === "ar" ? `تم إرسال كود إلى ${email}` : `Code sent to ${email}`}
+      </div>
+      {err && <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-2 text-sm text-red-300">{err}</div>}
+      <input value={code} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+        placeholder={language === "ar" ? "كود الاستعادة (6 أرقام)" : "Reset code (6 digits)"} inputMode="numeric"
+        className="h-12 w-full rounded-2xl border border-white/10 bg-[#070d22] px-4 text-white outline-none text-center font-mono text-xl tracking-widest focus:border-amber-400/60" />
+      <input value={newPass} onChange={e => setNewPass(e.target.value)} type="password"
+        placeholder={language === "ar" ? "كلمة المرور الجديدة" : "New password"}
+        className="h-12 w-full rounded-2xl border border-white/10 bg-[#070d22] px-4 text-white outline-none focus:border-amber-400/60" />
+      <input value={confirm} onChange={e => setConfirm(e.target.value)} type="password"
+        placeholder={language === "ar" ? "تأكيد كلمة المرور" : "Confirm password"}
+        className="h-12 w-full rounded-2xl border border-white/10 bg-[#070d22] px-4 text-white outline-none focus:border-amber-400/60" />
+      <button type="submit" className="h-12 w-full rounded-2xl bg-amber-500 font-black text-black hover:bg-amber-400 transition">
+        ✅ {language === "ar" ? "تغيير كلمة المرور" : "Change Password"}
+      </button>
+    </form>
   );
 }

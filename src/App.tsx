@@ -1206,9 +1206,33 @@ function AppContent({ tenantName }: { tenantName: string }) {
       await setDoc(doc(firestore, _urlSlug ? `tenants/${_urlSlug}/reset_codes` : "reset_codes", user.id), {
         code, email: user.email, expiresAt, used: false,
       });
-      const sent = await sendResetEmail(user.email, user.name, code);
+      const sent = await sendResetEmail(user.email, user.name, code, language);
       if (sent) setAuthInfo(language === "ar" ? "تم إرسال كود الاستعادة إلى بريدك" : "Reset code sent to your email");
       else setAuthError(language === "ar" ? "تعذر إرسال البريد. تواصل مع المالك." : "Could not send email. Contact owner.");
+    } catch {
+      setAuthError(language === "ar" ? "حدث خطأ" : "An error occurred");
+    }
+  };
+
+  const handleResetPassword = async (email: string, code: string, newPassword: string) => {
+    setAuthError(null); setAuthInfo(null);
+    const user = approvedUsers.find(u => u.email.toLowerCase() === email.trim().toLowerCase());
+    if (!user) { setAuthError(language === "ar" ? "البريد غير مسجل" : "Email not registered"); return; }
+    try {
+      const ref = doc(firestore, _urlSlug ? `tenants/${_urlSlug}/reset_codes` : "reset_codes", user.id);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) { setAuthError(language === "ar" ? "لا يوجد طلب استعادة" : "No reset request found"); return; }
+      const data = snap.data() as any;
+      if (data.used) { setAuthError(language === "ar" ? "تم استخدام هذا الكود" : "Code already used"); return; }
+      if (Date.now() > data.expiresAt) { setAuthError(language === "ar" ? "انتهت صلاحية الكود" : "Code expired"); return; }
+      if (data.code !== code) { setAuthError(language === "ar" ? "الكود غير صحيح" : "Invalid code"); return; }
+      // Update password
+      const newHash = hashPassword(newPassword);
+      const updatedUser = { ...user, passwordHash: newHash };
+      mutate(prev => ({ ...prev, users: prev.users.map(u => u.id === user.id ? updatedUser : u) }));
+      void saveApprovedUser(updatedUser);
+      await setDoc(ref, { ...data, used: true }, { merge: true });
+      setAuthInfo(language === "ar" ? "تم تغيير كلمة المرور بنجاح. سجّل دخولك." : "Password changed. Please sign in.");
     } catch {
       setAuthError(language === "ar" ? "حدث خطأ" : "An error occurred");
     }
@@ -5447,7 +5471,7 @@ const saveUserEdit = (userId: string) => {
 
   if (!currentUser) {
     return (
-      <AuthScreen language={language} buildings={snapshot.buildings} errorMessage={authError} infoMessage={authInfo} onSignIn={handleSignIn} onCreateAccount={handleCreateAccount} onLanguageChange={lang => { setLanguage(lang); document.documentElement.dir = lang === "ar" ? "rtl" : "ltr"; window.localStorage.setItem(LANGUAGE_KEY, lang); }} companyName={tenantName} onForgotPassword={handleForgotPassword} />
+      <AuthScreen language={language} buildings={snapshot.buildings} errorMessage={authError} infoMessage={authInfo} onSignIn={handleSignIn} onCreateAccount={handleCreateAccount} onLanguageChange={lang => { setLanguage(lang); document.documentElement.dir = lang === "ar" ? "rtl" : "ltr"; window.localStorage.setItem(LANGUAGE_KEY, lang); }} companyName={tenantName} onForgotPassword={handleForgotPassword} onResetPassword={handleResetPassword} />
     );
   }
 
