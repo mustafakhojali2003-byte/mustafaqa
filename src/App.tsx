@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { setDoc, doc, deleteDoc, getDocs, collection, query, where, getDoc } from "firebase/firestore";
 import { firestore } from "./services/firebase";
 import AuthScreen from "./components/AuthScreen";
@@ -283,62 +283,69 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   return <div><div className="text-xs text-slate-500">{label}</div><div className="mt-1 font-bold text-white">{value || "—"}</div></div>;
 }
 
-// ─── Main App ─────────────────────────────────────────────────────────────────
-export default function App() {
-  // ─── Tenant validation (only when slug exists in URL) ─────────────────────
-  const [tenantReady, setTenantReady] = useState(!_urlSlug); // root = always ready
+// ─── Tenant Gate ─────────────────────────────────────────────────────────────
+function TenantGate({ children }: { children: (name: string) => React.ReactNode }) {
+  const [status, setStatus] = useState<"loading"|"ready"|"notfound"|"inactive"|"expired">(
+    _urlSlug ? "loading" : "ready"
+  );
   const [tenantName, setTenantName] = useState("");
-  const [tenantError, setTenantError] = useState<"notfound"|"inactive"|"expired"|null>(null);
 
   useEffect(() => {
-    if (!_urlSlug) return; // original app — skip
+    if (!_urlSlug) return;
     getDoc(doc(firestore, "tenants", _urlSlug)).then(snap => {
-      if (!snap.exists()) { setTenantError("notfound"); return; }
-      const data = snap.data() as any;
-      if (!data.active) { setTenantError("inactive"); return; }
-      if (data.subscriptionEnd && new Date(data.subscriptionEnd) < new Date()) {
-        setTenantName(data.companyName ?? "");
-        setTenantError("expired"); return;
+      if (!snap.exists()) { setStatus("notfound"); return; }
+      const d = snap.data() as any;
+      if (!d.active) { setStatus("inactive"); return; }
+      if (d.subscriptionEnd && new Date(d.subscriptionEnd) < new Date()) {
+        setTenantName(d.companyName ?? ""); setStatus("expired"); return;
       }
-      setTenantName(data.companyName ?? "");
-      setTenantReady(true);
-    }).catch(() => setTenantError("notfound"));
+      setTenantName(d.companyName ?? "");
+      setStatus("ready");
+    }).catch(() => setStatus("notfound"));
   }, []);
 
-  if (_urlSlug && !tenantReady && !tenantError) {
-    return (
-      <div className="min-h-screen bg-[#040818] flex items-center justify-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-amber-400 border-t-transparent"/>
-      </div>
-    );
-  }
-  if (tenantError === "notfound") return (
+  if (status === "loading") return (
+    <div className="min-h-screen bg-[#040818] flex items-center justify-center">
+      <div className="h-10 w-10 animate-spin rounded-full border-4 border-amber-400 border-t-transparent"/>
+    </div>
+  );
+  if (status === "notfound") return (
     <div className="min-h-screen bg-[#040818] flex items-center justify-center p-6 text-center">
-      <div className="space-y-3"><div className="text-6xl">🔒</div>
+      <div className="space-y-3">
+        <div className="text-6xl">🔒</div>
         <div className="text-2xl font-black text-white">رابط غير صحيح</div>
         <div className="text-slate-400 text-sm">هذا الرابط غير مخصص لأي شركة.<br/>تواصل مع مزود الخدمة.</div>
       </div>
     </div>
   );
-  if (tenantError === "inactive") return (
+  if (status === "inactive") return (
     <div className="min-h-screen bg-[#040818] flex items-center justify-center p-6 text-center">
-      <div className="space-y-3"><div className="text-6xl">⛔</div>
+      <div className="space-y-3">
+        <div className="text-6xl">⛔</div>
         <div className="text-2xl font-black text-white">الحساب موقوف</div>
-        <div className="text-slate-400 text-sm">تم إيقاف هذه الشركة مؤقتاً.</div>
+        <div className="text-slate-400 text-sm">تواصل مع مزود الخدمة.</div>
       </div>
     </div>
   );
-  if (tenantError === "expired") return (
+  if (status === "expired") return (
     <div className="min-h-screen bg-[#040818] flex items-center justify-center p-6 text-center">
-      <div className="space-y-3"><div className="text-6xl">⏰</div>
+      <div className="space-y-3">
+        <div className="text-6xl">⏰</div>
         <div className="text-2xl font-black text-white">انتهى الاشتراك</div>
         <div className="text-amber-400 font-bold">{tenantName}</div>
         <div className="text-slate-400 text-sm">تواصل مع مزود الخدمة لتجديد الاشتراك.</div>
       </div>
     </div>
   );
+  return <>{children(tenantName)}</>;
+}
 
-  const [snapshot, setSnapshot] = useState<AppSnapshot>(() => loadSnapshot());
+// ─── Main App ─────────────────────────────────────────────────────────────────
+export default function App() {
+  return <TenantGate>{(tenantName) => <AppContent tenantName={tenantName} />}</TenantGate>;
+}
+
+function AppContent({ tenantName }: { tenantName: string }) {
   const [language, setLanguage] = useState<Language>(() => {
     const saved = loadJson<Language>(LANGUAGE_KEY, "ar");
     // Apply dir immediately on load
