@@ -5,7 +5,7 @@ import AuthScreen from "./components/AuthScreen";
 import QrScannerModal from "./components/QrScannerModal";
 import VisitorManagementModal from "./components/VisitorManagementModal";
 import { playNormalAlertSound, registerNotificationServiceWorker, sendToServiceWorker, showSystemNotification, startEmergencySound, stopEmergencySound, vibrateDevice, vibrateEmergency } from "./services/notificationService";
-import { deleteAlertRemote, deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, savePendingUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers, saveConversation, subscribeReports, saveReport, deleteReportRemote, subscribeAlerts, saveAlert, subscribeVisitors, saveVisitor, updateVisitorRemote, deleteVisitorRemote, subscribeAttendance, saveAttendance, subscribeTasks, saveTask, updateTaskRemote, deleteTaskRemote, subscribeShifts, saveShift, updateShiftRemote, subscribeViolations, saveViolation, updateViolationRemote, subscribeSOSEvents, saveSOSEvent, updateSOSEventRemote, subscribePatrolRoutes, savePatrolRoute, deletePatrolRouteRemote, subscribeEntryLogs, saveEntryLog, deleteEntryLogRemote, setTenantId } from "./services/firebaseData";
+import { deleteAlertRemote, deleteApprovedUserRemote, deletePendingUserRemote, ensureRemoteSeed, saveApprovedUser, savePendingUser, subscribeApprovedUsers, subscribeConversations, subscribePendingUsers, saveConversation, subscribeReports, saveReport, deleteReportRemote, subscribeAlerts, saveAlert, subscribeVisitors, saveVisitor, updateVisitorRemote, deleteVisitorRemote, subscribeAttendance, saveAttendance, subscribeTasks, saveTask, updateTaskRemote, deleteTaskRemote, subscribeShifts, saveShift, updateShiftRemote, subscribeViolations, saveViolation, updateViolationRemote, subscribeSOSEvents, saveSOSEvent, updateSOSEventRemote, subscribePatrolRoutes, savePatrolRoute, deletePatrolRouteRemote, subscribeEntryLogs, saveEntryLog, deleteEntryLogRemote, setTenantId, saveSystemSettings, subscribeSystemSettings } from "./services/firebaseData";
 import { exportReportsPDF, exportShiftReportPDF, exportFullDashboardPDF } from "./services/pdfService";
 import { generateVisitorQR, generateBuildingQR } from "./services/qrService";
 import { analyzeData } from "./services/analyticsService";
@@ -845,6 +845,14 @@ function AppContent({ tenantName }: { tenantName: string }) {
     const unsubViolations = subscribeViolations(setRemoteViolations);
     const unsubSOS = subscribeSOSEvents(setRemoteSOSEvents);
 
+    // Sync systemSettings from Firebase (read-only — owner saves explicitly)
+    const unsubSettings = subscribeSystemSettings((remote: any) => {
+      setSnapshot(prev => ({
+        ...prev,
+        systemSettings: { ...prev.systemSettings, ...remote }
+      }));
+    });
+
     const goOnline = () => setIsOnline(true);
     const goOffline = () => setIsOnline(false);
     window.addEventListener("online", goOnline);
@@ -853,11 +861,23 @@ function AppContent({ tenantName }: { tenantName: string }) {
       unsubApproved(); unsubPending(); unsubConversations();
       unsubReports(); unsubAlerts(); unsubVisitors(); unsubAttendance();
       unsubTasks(); unsubShifts(); unsubViolations(); unsubSOS();
+      unsubSettings(); unsubPatrol(); unsubEntryLogs();
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
       navigator.serviceWorker?.removeEventListener("message", handleSWMessage);
     };
   }, []);
+
+  // ─── Auto-save systemSettings to Firebase when owner changes them ────────────
+  const _prevSettingsRef = useRef("");
+  useEffect(() => {
+    if (!isOwner) return;
+    const str = JSON.stringify(snapshot.systemSettings);
+    if (str === _prevSettingsRef.current) return;
+    _prevSettingsRef.current = str;
+    const timer = setTimeout(() => void saveSystemSettings(snapshot.systemSettings), 800);
+    return () => clearTimeout(timer);
+  }, [snapshot.systemSettings, isOwner]);
 
   useEffect(() => {
     if (!currentUserId) return;

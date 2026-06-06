@@ -181,6 +181,20 @@ export const subscribePatrolRoutes = (cb: (r: PatrolRoute[]) => void) =>
 export const savePatrolRoute = (r: PatrolRoute) => save("patrol_routes", r.id, r);
 export const deletePatrolRouteRemote = (id: string) => remove("patrol_routes", id);
 
+// ─── System Settings ──────────────────────────────────────────────────────────
+export const saveSystemSettings = (data: object) => save("settings", "system", data);
+
+export const subscribeSystemSettings = (cb: (data: any) => void): () => void => {
+  try {
+    const ref = _tenantId
+      ? doc(firestore, "tenants", _tenantId, "settings", "system")
+      : doc(firestore, "settings", "system");
+    return onSnapshot(ref, snap => {
+      if (snap.exists()) cb(snap.data());
+    }, () => noop());
+  } catch { return noop; }
+};
+
 // ─── Entry Logs ───────────────────────────────────────────────────────────────
 export const subscribeEntryLogs = (cb: (e: EntryLog[]) => void) =>
   subscribe<EntryLog>("entry_logs", cb, "time");
