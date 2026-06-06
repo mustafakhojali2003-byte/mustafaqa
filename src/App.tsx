@@ -582,6 +582,8 @@ function AppContent({ tenantName }: { tenantName: string }) {
     };
     // Apply owner's tabPermissions overrides
     return defaults[role].filter(tab => {
+      // Owner always keeps settings + system tabs (prevent self-lockout)
+      if (role === "owner" && (tab === "settings" || tab === "system")) return true;
       if (!tp[tab]) return true; // no override = use default
       return tp[tab]!.includes(role);
     });
@@ -5301,9 +5303,12 @@ const saveUserEdit = (userId: string) => {
     const allConfigTabs: Tab[] = ["dashboard","reports","alerts","buildings","users","visitors","attendance","tasks","chat","analytics","audit","violations","scores","patrol"];
     const tp = snapshot.systemSettings.tabPermissions ?? {};
     const setTabPerm = (tab: Tab, role: Role, val: boolean) => {
-      const current = tp[tab] ?? ["owner","admin","guard"];
-      const next = val ? [...new Set([...current, role])] : current.filter(r => r !== role);
-      mutate(prev => ({ ...prev, systemSettings: { ...prev.systemSettings, tabPermissions: { ...tp, [tab]: next } } }));
+      mutate(prev => {
+        const ptp = prev.systemSettings.tabPermissions ?? {};
+        const current = ptp[tab] ?? ["owner","admin","guard"];
+        const next = val ? [...new Set([...current, role])] : current.filter(r => r !== role);
+        return { ...prev, systemSettings: { ...prev.systemSettings, tabPermissions: { ...ptp, [tab]: next } } };
+      });
     };
     const inviteCode = snapshot.systemSettings.inviteCode ?? "";
     const inviteLink = inviteCode ? `${window.location.origin}${window.location.pathname}?invite=${inviteCode}` : "";
