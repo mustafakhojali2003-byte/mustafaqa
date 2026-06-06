@@ -16,18 +16,17 @@ import { validateEmail } from "./services/emailVerification";
 import type { AlertLog, AppSnapshot, AttendanceRecord, AuditEntry, AuditSeverity, Building, ChatMessage, Conversation, EntryLog, Language, NewAccountPayload, Pair, Report, ReportComment, ReportStatus, Role, Shift, SOSEvent, Tab, Task, Toast, ToastTone, User, Violation, VisitorFormPayload, VisitorRecord } from "./types/security";
 
 // ─── Tenant: read slug from URL ───────────────────────────────────────────────
-// mustafaqa.vercel.app/alhazm → _urlSlug = "alhazm"
-// mustafaqa.vercel.app        → _urlSlug = "" (original مركز الشفلح)
 const _urlSlug = window.location.pathname.split("/").filter(Boolean)[0] ?? "";
-if (_urlSlug) setTenantId(_urlSlug); // scope all Firebase calls to /tenants/{slug}/
-const _keyPrefix = _urlSlug || "default";
+if (_urlSlug) setTenantId(_urlSlug);
 
-const STORAGE_KEY = "mustafaqa-v1";
-const SESSION_KEY = "mustafaqa-session-v1";
-const OWNER_ID = "owner-mustafa-2024"; // owner is immutable
+// Per-tenant localStorage keys — each company has its own storage
+const STORAGE_KEY  = _urlSlug ? `mustafaqa-v1-${_urlSlug}`         : "mustafaqa-v1";
+const SESSION_KEY  = _urlSlug ? `mustafaqa-session-v1-${_urlSlug}` : "mustafaqa-session-v1";
+const SYNC_KEY     = _urlSlug ? `mustafaqa-sync-v1-${_urlSlug}`    : "mustafaqa-sync-v1";
+const ACTIVE_KEY   = _urlSlug ? `mustafaqa-active-v1-${_urlSlug}`  : "mustafaqa-active-v1";
+
+const OWNER_ID = "owner-mustafa-2024";
 const LANGUAGE_KEY = "mustafaqa-lang-v1";
-const SYNC_KEY = "mustafaqa-sync-v1";
-const ACTIVE_KEY = "mustafaqa-active-v1";
 const REPORTS_PER_PAGE = 6;
 const VISITOR_REMINDER_MINUTES = 30;
 const VISITOR_ARRIVAL_REMIND_MINUTES = 15;
@@ -239,14 +238,51 @@ function buildSeedState(): AppSnapshot {
   };
 }
 
+// Empty state for NEW tenant URLs — no seed users, no seed buildings
+// All data comes from Firebase only
+function buildEmptyState(): AppSnapshot {
+  return {
+    buildings: [],
+    users: [],
+    reports: [],
+    alerts: [],
+    attendance: [],
+    tasks: [],
+    visitors: [],
+    conversations: [],
+    auditLog: [],
+    systemSettings: {
+      emergencyContact: "999",
+      welcomeAr: "مرحباً بك في نظام QGuard.",
+      welcomeEn: "Welcome to QGuard system.",
+      criticalEmail: "",
+      criticalSms: "",
+      visitorReminderMinutes: VISITOR_REMINDER_MINUTES,
+      orgName: APP_NAME,
+      shiftStartHour: 7,
+      shiftEndHour: 19,
+    },
+    shifts: [],
+    violations: [],
+    sosEvents: [],
+  };
+}
+
 function loadSnapshot(): AppSnapshot {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return buildSeedState();
+    // Tenant URL with no saved data → start fresh (empty)
+    if (!raw) return _urlSlug ? buildEmptyState() : buildSeedState();
     const parsed = JSON.parse(raw) as AppSnapshot;
-    const seed = buildSeedState();
-    return { ...seed, ...parsed, buildings: seed.buildings, shifts: parsed.shifts ?? seed.shifts, violations: parsed.violations ?? seed.violations, sosEvents: parsed.sosEvents ?? seed.sosEvents };
-  } catch { return buildSeedState(); }
+    const base = _urlSlug ? buildEmptyState() : buildSeedState();
+    return {
+      ...base, ...parsed,
+      buildings:  _urlSlug ? (parsed.buildings  ?? []) : base.buildings,
+      shifts:     parsed.shifts     ?? base.shifts,
+      violations: parsed.violations ?? base.violations,
+      sosEvents:  parsed.sosEvents  ?? base.sosEvents,
+    };
+  } catch { return _urlSlug ? buildEmptyState() : buildSeedState(); }
 }
 
 // ─── UI Primitives ────────────────────────────────────────────────────────────
