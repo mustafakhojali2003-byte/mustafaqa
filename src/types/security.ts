@@ -106,6 +106,13 @@ export interface SystemSettings {
   criticalEmail: string; criticalSms: string;
   visitorReminderMinutes: number; orgName?: string; orgLogo?: string;
   shiftStartHour?: number; shiftEndHour?: number;
+  // ─── Invite & Registration ────────────────────────────────────────────────
+  inviteCode?: string;           // Secret code for invite link
+  inviteAutoApprove?: boolean;   // Auto-approve invited users
+  // ─── Chat Control ─────────────────────────────────────────────────────────
+  chatOpenToAll?: boolean;       // Guards can chat with each other
+  // ─── Tab Permissions (owner controls per-role visibility) ─────────────────
+  tabPermissions?: Partial<Record<Tab, Role[]>>; // which roles can see each tab
 }
 
 export interface AppSnapshot {

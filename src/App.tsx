@@ -527,15 +527,22 @@ function AppContent({ tenantName }: { tenantName: string }) {
   const guardUsers = useMemo(() => approvedUsers.filter(u => u.role === "guard"), [approvedUsers]);
 
   const visibleTabs = useMemo((): Tab[] => {
-    if (isGuard) return ["reports", "alerts", "buildings", "visitors", "attendance", "tasks", "chat", "patrol", "settings"];  // no violations, no scores
-    if (isAdmin) return [
-      "dashboard", "reports", "alerts", "buildings", "users", "visitors", "tasks", "chat",
-      ...(currentUser?.permissions?.includes("violations") ? ["violations" as Tab] : []),
-      ...(currentUser?.permissions?.includes("scores") ? ["scores" as Tab] : []),
-      "patrol", "settings"
-    ];
-    return ["dashboard", "reports", "alerts", "buildings", "users", "visitors", "attendance", "tasks", "chat", "analytics", "audit", "violations", "scores", "patrol", "system", "settings"];
-  }, [isAdmin, isGuard, currentUser]);
+    const tp = snapshot.systemSettings.tabPermissions ?? {};
+    const role: Role = isOwner ? "owner" : isAdmin ? "admin" : "guard";
+    // Default tab sets per role
+    const defaults: Record<Role, Tab[]> = {
+      owner:  ["dashboard","reports","alerts","buildings","users","visitors","attendance","tasks","chat","analytics","audit","violations","scores","patrol","map","sos","system","settings"],
+      admin:  ["dashboard","reports","alerts","buildings","users","visitors","tasks","chat","patrol","settings",
+               ...(currentUser?.permissions?.includes("violations") ? ["violations" as Tab] : []),
+               ...(currentUser?.permissions?.includes("scores") ? ["scores" as Tab] : [])],
+      guard:  ["reports","alerts","buildings","visitors","attendance","tasks","chat","patrol","settings"],
+    };
+    // Apply owner's tabPermissions overrides
+    return defaults[role].filter(tab => {
+      if (!tp[tab]) return true; // no override = use default
+      return tp[tab]!.includes(role);
+    });
+  }, [isAdmin, isGuard, isOwner, currentUser, snapshot.systemSettings.tabPermissions]);
 
   // ─── Merge remote + local for ALL collections ─────────────────────────────
   // All patrol routes deduplicated
@@ -644,50 +651,49 @@ function AppContent({ tenantName }: { tenantName: string }) {
 
   const visibleConversations = useMemo(() => {
     if (!currentUser) return [];
-    // Owner: sees all users
+    const chatOpen = snapshot.systemSettings.chatOpenToAll ?? false;
+    // Owner: sees all users always
     if (currentUser.role === "owner") {
       const activeUsers = approvedUsers
         .filter(u => u.id !== currentUser.id && !deletedUserIds.has(u.id) && !blockedUserIds.has(u.id));
-      
-      // Map each user to their conversation (or create empty one)
-      // deduplicate by participantId
       const seen = new Set<string>();
       return activeUsers
         .filter(u => { if (seen.has(u.id)) return false; seen.add(u.id); return true; })
         .map(u => {
-          // Find existing conversation from Firebase for this user
           const existing = conversationsSource.find(c => c.participantId === u.id);
           if (existing) return { ...existing, participantName: u.name, participantRole: u.role as Role };
           return { id: `c-${u.id}`, participantId: u.id, participantName: u.name, participantRole: u.role as Role, messages: [] };
         })
         .sort((a, b) => {
-          // Sort by last message time (most recent first)
           const aTime = a.messages?.[a.messages.length - 1]?.time ?? "";
           const bTime = b.messages?.[b.messages.length - 1]?.time ?? "";
           return bTime.localeCompare(aTime);
         });
     }
-    // Admin: sees only owner (not guards)
+    // Admin: sees owner + (if chatOpenToAll: guards too)
     if (currentUser.role === "admin") {
-      const owner = approvedUsers.find(u => u.role === "owner");
-      if (!owner) return [];
-      const existing = conversationsSource.find(c => c.participantId === owner.id);
-      const conv = existing ?? { id: `c-${owner.id}`, participantId: owner.id, participantName: owner.name, participantRole: "owner" as Role, messages: [] };
-      return [{ ...conv, participantName: owner.name, participantRole: "owner" as Role }];
+      const contacts = approvedUsers.filter(u =>
+        u.id !== currentUser.id && !deletedUserIds.has(u.id) && !blockedUserIds.has(u.id) &&
+        (u.role === "owner" || (chatOpen && u.role === "guard"))
+      );
+      return contacts.map(u => {
+        const existing = conversationsSource.find(c => c.participantId === u.id);
+        const conv = existing ?? { id: `c-${u.id}`, participantId: u.id, participantName: u.name, participantRole: u.role as Role, messages: [] };
+        return { ...conv, participantName: u.name, participantRole: u.role as Role };
+      });
     }
-    // Guard: conversation with owner + all admins
-    const ownerAndAdmins = approvedUsers.filter(u =>
-      (u.role === "owner" || u.role === "admin") &&
-      !deletedUserIds.has(u.id) && !blockedUserIds.has(u.id)
+    // Guard: owner + admins + (if chatOpenToAll: other guards too)
+    const contacts = approvedUsers.filter(u =>
+      u.id !== currentUser.id && !deletedUserIds.has(u.id) && !blockedUserIds.has(u.id) &&
+      (u.role === "owner" || u.role === "admin" || (chatOpen && u.role === "guard"))
     );
-    return ownerAndAdmins.map(u => {
-      // Guard's conversation is keyed by guard's id for owner, but by the admin id for admins
+    return contacts.map(u => {
       const convKey = u.role === "owner" ? currentUser.id : u.id;
       const existing = conversationsSource.find(c => c.participantId === convKey || c.participantId === u.id);
       const conv = existing ?? { id: `c-${convKey}`, participantId: convKey, participantName: u.name, participantRole: u.role as Role, messages: [] };
       return { ...conv, participantName: u.name, participantRole: u.role as Role };
     });
-  }, [approvedUsers, conversationsSource, currentUser]);
+  }, [approvedUsers, conversationsSource, currentUser, snapshot.systemSettings.chatOpenToAll]);
 
   const activeConversation = useMemo(() => visibleConversations.find(c => c.id === conversationId) ?? visibleConversations[0], [conversationId, visibleConversations]);
   const visibleTasks = useMemo(() => isGuard && currentUser ? mergedTasks.filter(t => t.assignedTo === currentUser.id || t.assignedTo === currentUser.email) : mergedTasks, [currentUser, isGuard, mergedTasks]);
@@ -1157,7 +1163,7 @@ function AppContent({ tenantName }: { tenantName: string }) {
       ...snapshot.users,
       ...(remotePendingUsers ?? []),
       ...(remoteApprovedUsers ?? []),
-    ].filter((u, i, arr) => arr.findIndex(x => x.id === u.id) === i); // dedupe
+    ].filter((u, i, arr) => arr.findIndex(x => x.id === u.id) === i);
     const emailExists = allUsers.some(u =>
       u.email.toLowerCase() === payload.email.trim().toLowerCase() &&
       !deletedUserIds.has(u.id)
@@ -1165,29 +1171,40 @@ function AppContent({ tenantName }: { tenantName: string }) {
     if (emailExists)
       return setAuthError(language === "ar" ? "البريد مستخدم بالفعل" : "Email already registered");
     if (emailCheck.suggestion) setAuthInfo(emailCheck.suggestion);
+
+    // Check invite code from URL
+    const urlInvite = new URLSearchParams(window.location.search).get("invite") ?? "";
+    const validInvite = urlInvite && urlInvite === snapshot.systemSettings.inviteCode;
+    const autoApprove = validInvite && !!snapshot.systemSettings.inviteAutoApprove;
+
     const newUser: User = {
       id: `user-${Date.now()}`, name: payload.name.trim(), email: payload.email.trim(),
       phone: payload.role === "admin" ? "" : payload.phone.trim(),
       securityNumber: payload.securityNumber?.trim() || undefined,
-      role: payload.role, status: "pending",
+      role: payload.role, status: autoApprove ? "approved" : "pending",
       assignedBuildingId: payload.role === "admin" ? undefined : payload.buildingId,
       permissions: payload.role === "admin" ? ["reports", "attendance", "buildings", "viewReports", "chat", "visitors", "shifts"] : ["reports", "attendance", "chat", "buildings", "visitors", "sos"],
       rating: 4, passwordHash: hashPassword(payload.password), soundEnabled: true, desktopNotificationsEnabled: false, showFullToAdmin: false, createdAt: nowStamp(), violations: 0,
     };
-    // Save to Firebase so owner sees it on ANY device
     try {
-      await savePendingUser(newUser);
-      mutate(prev => ({ ...prev, users: [newUser, ...prev.users], auditLog: [createAuditEntry(null, "account_request", newUser.email, "طلب حساب جديد", "warning"), ...prev.auditLog] }));
-      setPendingUserId(newUser.id);
-      window.localStorage.setItem("mustafaqa-pending-id", newUser.id);
-      setAuthInfo(language === "ar" ? "✅ تم إرسال الطلب — ستدخل التطبيق تلقائياً عند موافقة المالك" : "✅ Request submitted — you will be logged in automatically when approved");
-      // Request notification permission after registration
+      if (autoApprove) {
+        await saveApprovedUser(newUser);
+        mutate(prev => ({ ...prev, users: [newUser, ...prev.users] }));
+        setCurrentUserId(newUser.id);
+        window.localStorage.setItem(SESSION_KEY, newUser.id);
+        setAuthInfo(language === "ar" ? "✅ تم التسجيل بنجاح عبر رابط الدعوة!" : "✅ Registered via invite link!");
+      } else {
+        await savePendingUser(newUser);
+        mutate(prev => ({ ...prev, users: [newUser, ...prev.users], auditLog: [createAuditEntry(null, "account_request", newUser.email, "طلب حساب جديد", "warning"), ...prev.auditLog] }));
+        setPendingUserId(newUser.id);
+        window.localStorage.setItem("mustafaqa-pending-id", newUser.id);
+        setAuthInfo(language === "ar" ? "✅ تم إرسال الطلب — ستدخل التطبيق تلقائياً عند موافقة المالك" : "✅ Request submitted — you will be logged in automatically when approved");
+        const owner = approvedUsers.find(u => u.role === "owner");
+        if (owner) void sendPushViaWorker("⏳ طلب حساب جديد", `${newUser.name} — ${newUser.email}`, "pending_user", owner.id);
+      }
       if ("Notification" in window && Notification.permission === "default") {
         Notification.requestPermission().catch(() => undefined);
       }
-      // Notify owner via Worker
-      const owner = approvedUsers.find(u => u.role === "owner");
-      if (owner) void sendPushViaWorker("⏳ طلب حساب جديد", `${newUser.name} — ${newUser.email}`, "pending_user", owner.id);
     } catch (innerErr) {
       mutate(prev => ({ ...prev, users: [newUser, ...prev.users] }));
       setAuthInfo(language === "ar" ? "تم الإرسال (وضع أوفلاين)" : "Submitted (offline mode)");
@@ -5174,10 +5191,112 @@ const saveUserEdit = (userId: string) => {
     );
   };
 
-  const renderSystem = () => (
+  const renderSystem = () => {
+    const tabLabels: Partial<Record<Tab, string>> = {
+      dashboard:"لوحة التحكم", reports:"التقارير", alerts:"التنبيهات",
+      buildings:"المباني", users:"المستخدمين", visitors:"الزوار",
+      attendance:"الحضور", tasks:"المهام", chat:"الدردشة",
+      analytics:"التحليلات", audit:"السجل", violations:"المخالفات",
+      scores:"التقييمات", patrol:"الجولات", map:"الخريطة", sos:"SOS",
+    };
+    const allConfigTabs: Tab[] = ["dashboard","reports","alerts","buildings","users","visitors","attendance","tasks","chat","analytics","audit","violations","scores","patrol"];
+    const tp = snapshot.systemSettings.tabPermissions ?? {};
+    const setTabPerm = (tab: Tab, role: Role, val: boolean) => {
+      const current = tp[tab] ?? ["owner","admin","guard"];
+      const next = val ? [...new Set([...current, role])] : current.filter(r => r !== role);
+      mutate(prev => ({ ...prev, systemSettings: { ...prev.systemSettings, tabPermissions: { ...tp, [tab]: next } } }));
+    };
+    const inviteCode = snapshot.systemSettings.inviteCode ?? "";
+    const inviteLink = inviteCode ? `${window.location.origin}${window.location.pathname}?invite=${inviteCode}` : "";
+
+    return (
     <div className="space-y-6">
       <SectionHead title={language === "ar" ? "إعدادات النظام" : "System Settings"} subtitle={language === "ar" ? "للمالك فقط" : "Owner only"} />
 
+      {/* ── Invite Link ── */}
+      <Panel>
+        <div className="mb-4 font-black text-amber-400">🔗 {language === "ar" ? "رابط دعوة المستخدمين" : "User Invite Link"}</div>
+        <div className="space-y-3">
+          <p className="text-sm text-slate-400">{language === "ar" ? "شارك هذا الرابط مع موظفيك حتى يتمكنوا من التسجيل." : "Share this link with your employees so they can register."}</p>
+          {inviteLink ? (
+            <div className="flex gap-2">
+              <input readOnly value={inviteLink} className="flex-1 rounded-2xl border border-white/10 bg-[#070d22] px-3 py-2 text-xs text-slate-300 outline-none font-mono" />
+              <Btn className="shrink-0" onClick={() => { navigator.clipboard.writeText(inviteLink); showToast("📋 تم نسخ الرابط", "success"); }}>📋</Btn>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">{language === "ar" ? "لا يوجد رابط دعوة. اضغط إنشاء لتفعيله." : "No invite link. Click Generate to create one."}</p>
+          )}
+          <div className="flex gap-2 flex-wrap">
+            <Btn onClick={() => {
+              const code = Math.random().toString(36).slice(2,10).toUpperCase();
+              mutate(prev => ({ ...prev, systemSettings: { ...prev.systemSettings, inviteCode: code } }));
+              showToast("✅ تم إنشاء رابط الدعوة", "success");
+            }}>🔄 {inviteLink ? (language==="ar"?"تجديد الرابط":"Regenerate") : (language==="ar"?"إنشاء رابط":"Generate Link")}</Btn>
+            {inviteLink && <Btn variant="danger" onClick={() => { mutate(prev => ({ ...prev, systemSettings: { ...prev.systemSettings, inviteCode: "" } })); showToast("🗑 تم حذف رابط الدعوة", "info"); }}>🗑 {language==="ar"?"حذف":"Delete"}</Btn>}
+          </div>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => mutate(prev => ({ ...prev, systemSettings: { ...prev.systemSettings, inviteAutoApprove: !prev.systemSettings.inviteAutoApprove } }))}
+              className={`relative h-6 w-11 rounded-full transition ${snapshot.systemSettings.inviteAutoApprove ? "bg-amber-500" : "bg-slate-700"}`}>
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${snapshot.systemSettings.inviteAutoApprove ? "left-5" : "left-0.5"}`} />
+            </button>
+            <span className="text-sm text-slate-300">{language==="ar"?"قبول تلقائي للمدعوين":"Auto-approve invited users"}</span>
+          </div>
+        </div>
+      </Panel>
+
+      {/* ── Chat Control ── */}
+      <Panel>
+        <div className="mb-4 font-black text-amber-400">💬 {language === "ar" ? "إعدادات الدردشة" : "Chat Settings"}</div>
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => mutate(prev => ({ ...prev, systemSettings: { ...prev.systemSettings, chatOpenToAll: !prev.systemSettings.chatOpenToAll } }))}
+            className={`relative h-6 w-11 rounded-full transition ${snapshot.systemSettings.chatOpenToAll ? "bg-amber-500" : "bg-slate-700"}`}>
+            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${snapshot.systemSettings.chatOpenToAll ? "left-5" : "left-0.5"}`} />
+          </button>
+          <div>
+            <div className="text-sm font-bold text-white">{language==="ar"?"فتح الدردشة للجميع":"Open Chat to Everyone"}</div>
+            <div className="text-xs text-slate-500">{language==="ar"?"الحراس والإداريين يمكنهم التراسل مع بعضهم":"Guards and admins can message each other"}</div>
+          </div>
+        </div>
+      </Panel>
+
+      {/* ── Tab Permissions ── */}
+      <Panel>
+        <div className="mb-4 font-black text-amber-400">🔐 {language === "ar" ? "صلاحيات التبويبات" : "Tab Permissions"}</div>
+        <p className="text-xs text-slate-500 mb-4">{language==="ar"?"تحكم من يرى كل تبويب. الإزالة من المالك غير ممكنة.":"Control who sees each tab. Owner always sees all."}</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs text-slate-500 border-b border-white/10">
+                <th className="py-2 text-right font-semibold">{language==="ar"?"التبويب":"Tab"}</th>
+                <th className="py-2 text-center font-semibold">{language==="ar"?"إداري":"Admin"}</th>
+                <th className="py-2 text-center font-semibold">{language==="ar"?"حارس":"Guard"}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allConfigTabs.map(tab => {
+                const perms = tp[tab] ?? ["owner","admin","guard"];
+                return (
+                  <tr key={tab} className="border-b border-white/5">
+                    <td className="py-2 text-slate-300">{tabLabels[tab] ?? tab}</td>
+                    <td className="py-2 text-center">
+                      <input type="checkbox" checked={perms.includes("admin")}
+                        onChange={e => setTabPerm(tab,"admin",e.target.checked)}
+                        className="h-4 w-4 rounded accent-amber-500 cursor-pointer" />
+                    </td>
+                    <td className="py-2 text-center">
+                      <input type="checkbox" checked={perms.includes("guard")}
+                        onChange={e => setTabPerm(tab,"guard",e.target.checked)}
+                        className="h-4 w-4 rounded accent-amber-500 cursor-pointer" />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+
+      {/* ── Org Info ── */}
       <Panel>
         <div className="mb-4 font-black text-amber-400">🏢 {language === "ar" ? "معلومات المنظمة" : "Organization Info"}</div>
         <div className="space-y-4">
@@ -5223,7 +5342,8 @@ const saveUserEdit = (userId: string) => {
         💾 {language === "ar" ? "حفظ جميع الإعدادات" : "Save All Settings"}
       </Btn>
     </div>
-  );
+    );
+  };
 
   const renderContent = () => {
     switch (activeTab) {
