@@ -346,6 +346,7 @@ export default function App() {
 }
 
 function AppContent({ tenantName }: { tenantName: string }) {
+  const [snapshot, setSnapshot] = useState<AppSnapshot>(() => loadSnapshot());
   const [language, setLanguage] = useState<Language>(() => {
     const saved = loadJson<Language>(LANGUAGE_KEY, "ar");
     // Apply dir immediately on load
