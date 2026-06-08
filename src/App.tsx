@@ -636,12 +636,11 @@ function AppContent({ tenantName }: { tenantName: string }) {
   }, [remoteAlerts]);
 
   const mergedVisitors = useMemo(() => {
-    // Use Firebase (remoteVisitors) as primary - fresh real-time data
-    if (remoteVisitors.length > 0) {
-      return [...remoteVisitors].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    }
-    // Fallback to local only on first load before Firebase responds
-    return [...snapshot.visitors].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    // Merge local (offline cache) + remote (Firebase) — dedup by id, remote wins
+    const map = new Map<string, VisitorRecord>();
+    snapshot.visitors.forEach(v => map.set(v.id, v));
+    remoteVisitors.forEach(v => map.set(v.id, v));
+    return Array.from(map.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [snapshot.visitors, remoteVisitors]);
 
   const mergedAttendance = useMemo(() => {
@@ -3346,6 +3345,7 @@ function AppContent({ tenantName }: { tenantName: string }) {
                     });
                     newVisitors.forEach(v => void saveVisitor(v));
                     setRemoteVisitors(prev => [...newVisitors, ...prev]);
+                    mutate(prev => ({ ...prev, visitors: [...newVisitors, ...prev.visitors] }));
                     showToast(language === "ar" ? `✅ تم إضافة ${newVisitors.length} زائر` : `✅ Added ${newVisitors.length} visitors`, "success");
                     setShowBulkImport(false); setBulkText("");
                   }}>
