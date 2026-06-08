@@ -2067,7 +2067,7 @@ function AppContent({ tenantName }: { tenantName: string }) {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {isOwner && <Btn onClick={() => setActiveTab("users")} variant="secondary" className="h-12">{language === "ar" ? "👥 إدارة المستخدمين" : "👥 Manage Users"}</Btn>}
           <Btn onClick={() => setActiveTab("alerts")} variant="secondary" className="h-12">{language === "ar" ? "🚨 إرسال إنذار" : "🚨 Send Alert"}</Btn>
-          <Btn onClick={() => setActiveTab("visitors")} variant="secondary" className="h-12">{language === "ar" ? "🎫 إضافة زائر" : "🎫 Add Visitor"}</Btn>
+          {(isOwner || isAdmin) && <Btn onClick={() => setActiveTab("visitors")} variant="secondary" className="h-12">{language === "ar" ? "🎫 إضافة زائر" : "🎫 Add Visitor"}</Btn>}
 
         </div>
       </div>
@@ -3201,10 +3201,14 @@ function AppContent({ tenantName }: { tenantName: string }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <SectionHead title={language === "ar" ? "الزوار" : "Visitors"} />
           <div className="flex gap-2">
-            <Btn variant="secondary" onClick={() => { setBulkText(""); setShowBulkImport(true); }}>
-              📋 {language === "ar" ? "استيراد قائمة" : "Import List"}
-            </Btn>
-            <Btn onClick={() => setVisitorModalOpen(true)}>+ {language === "ar" ? "إضافة زائر" : "Add Visitor"}</Btn>
+            {(isOwner || isAdmin) && (
+              <>
+                <Btn variant="secondary" onClick={() => { setBulkText(""); setShowBulkImport(true); }}>
+                  📋 {language === "ar" ? "استيراد قائمة" : "Import List"}
+                </Btn>
+                <Btn onClick={() => setVisitorModalOpen(true)}>+ {language === "ar" ? "إضافة زائر" : "Add Visitor"}</Btn>
+              </>
+            )}
           </div>
         </div>
 
