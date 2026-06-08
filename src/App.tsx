@@ -429,6 +429,8 @@ function AppContent({ tenantName }: { tenantName: string }) {
   const [showEntryLogForm, setShowEntryLogForm] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [bulkText, setBulkText] = useState("");
+  const [bulkDate, setBulkDate] = useState(new Date().toISOString().slice(0, 10));
+  const [bulkTime, setBulkTime] = useState("09:00");
   const [editingEntryLogId, setEditingEntryLogId] = useState<string | null>(null);
   const [activeVisitorTab, setActiveVisitorTab] = useState<"visitors"|"entrylog">("visitors");
   const [qrModalOpen, setQrModalOpen] = useState(false);
@@ -3198,6 +3200,9 @@ function AppContent({ tenantName }: { tenantName: string }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <SectionHead title={language === "ar" ? "الزوار" : "Visitors"} />
           <div className="flex gap-2">
+            <Btn variant="secondary" onClick={() => { setBulkText(""); setShowBulkImport(true); }}>
+              📋 {language === "ar" ? "استيراد قائمة" : "Import List"}
+            </Btn>
             <Btn onClick={() => setVisitorModalOpen(true)}>+ {language === "ar" ? "إضافة زائر" : "Add Visitor"}</Btn>
           </div>
         </div>
@@ -3237,6 +3242,71 @@ function AppContent({ tenantName }: { tenantName: string }) {
                 {(["scheduled","arrived","departed","cancelled"] as const).map(s => <option key={s} value={s}>{statusLabel[s]}</option>)}
               </SelInput>
             </div>
+
+            {/* Bulk import modal */}
+            {showBulkImport && (
+              <Panel className="border-amber-400/30">
+                <div className="mb-2 font-bold text-amber-300">📋 {language === "ar" ? "استيراد قائمة زوار" : "Import Visitor List"}</div>
+                <div className="mb-3 text-xs text-slate-400">
+                  {language === "ar"
+                    ? "ارفع ملف نصي (.txt) أو الصق الأسماء — كل سطر اسم. الصيغة: الاسم - الجهة (الجهة اختيارية)"
+                    : "Upload a .txt file or paste names — one per line. Format: Name - Affiliation (optional)"}
+                </div>
+                {/* Date + Time pickers */}
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <Lbl>{language === "ar" ? "📅 تاريخ الزيارة" : "📅 Visit Date"}</Lbl>
+                    <TxtInput type="date" value={bulkDate} onChange={e => setBulkDate(e.target.value)} />
+                  </div>
+                  <div>
+                    <Lbl>{language === "ar" ? "🕐 وقت الزيارة" : "🕐 Visit Time"}</Lbl>
+                    <TxtInput type="time" value={bulkTime} onChange={e => setBulkTime(e.target.value)} />
+                  </div>
+                </div>
+                <input type="file" accept=".txt,.csv" onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (file) { const text = await file.text(); setBulkText(text); }
+                }} className="mb-3 block w-full text-sm text-slate-300 file:mr-3 file:rounded-xl file:border-0 file:bg-amber-500 file:px-4 file:py-2 file:text-sm file:font-bold file:text-black" />
+                <TxtArea rows={7} value={bulkText} onChange={e => setBulkText(e.target.value)}
+                  placeholder={language === "ar" ? "أو الصق الأسماء هنا...\nمثال:\nأحمد محمد - شركة النور\nسارة علي - وزارة الصحة" : "Or paste names...\nExample:\nAhmed - Al Noor Co\nSara - Ministry"} />
+                <div className="mt-2 text-xs text-slate-500">
+                  {(() => {
+                    const n = bulkText.split("\n").map(l => l.trim()).filter(Boolean).length;
+                    return language === "ar" ? `${n} زائر سيُضاف` : `${n} visitors will be added`;
+                  })()}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Btn onClick={() => {
+                    const lines = bulkText.split("\n").map(l => l.trim()).filter(Boolean);
+                    if (lines.length === 0) { showToast(language === "ar" ? "لا توجد أسماء" : "No names found", "danger"); return; }
+                    const newVisitors: VisitorRecord[] = lines.map((line, i) => {
+                      const clean = line.replace(/^\s*\d+[.)-]\s*/, "");
+                      const parts = clean.split(/\s[-–—]\s/);
+                      const guestName = parts[0]?.trim() || clean;
+                      const company = parts.slice(1).join(" - ").trim();
+                      return {
+                        id: `v-${Date.now()}-${i}`,
+                        guestName, company, purpose: "",
+                        identityNumber: "", buildingId: snapshot.buildings[0]?.id ?? "",
+                        arrivalDate: bulkDate, arrivalTime: bulkTime,
+                        createdBy: currentUser!.name, createdAt: nowStamp(),
+                        passCode: generatePassCode(), status: "scheduled" as const,
+                        reminderSent: false, preNotified: true, notes: "",
+                      };
+                    });
+                    newVisitors.forEach(v => void saveVisitor(v));
+                    setRemoteVisitors(prev => [...newVisitors, ...prev]);
+                    showToast(language === "ar" ? `✅ تم إضافة ${newVisitors.length} زائر` : `✅ Added ${newVisitors.length} visitors`, "success");
+                    setShowBulkImport(false); setBulkText("");
+                  }}>
+                    ✅ {language === "ar" ? "استيراد الكل" : "Import All"}
+                  </Btn>
+                  <Btn variant="secondary" onClick={() => { setShowBulkImport(false); setBulkText(""); }}>
+                    {language === "ar" ? "إلغاء" : "Cancel"}
+                  </Btn>
+                </div>
+              </Panel>
+            )}
 
             {/* List */}
             <div className="space-y-3">
