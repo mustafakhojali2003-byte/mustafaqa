@@ -431,6 +431,8 @@ function AppContent({ tenantName }: { tenantName: string }) {
   const [bulkText, setBulkText] = useState("");
   const [bulkDate, setBulkDate] = useState(new Date().toISOString().slice(0, 10));
   const [bulkTime, setBulkTime] = useState("09:00");
+  const [selectedVisitorIds, setSelectedVisitorIds] = useState<Set<string>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
   const [editingEntryLogId, setEditingEntryLogId] = useState<string | null>(null);
   const [activeVisitorTab, setActiveVisitorTab] = useState<"visitors"|"entrylog">("visitors");
   const [qrModalOpen, setQrModalOpen] = useState(false);
@@ -3243,6 +3245,54 @@ function AppContent({ tenantName }: { tenantName: string }) {
               </SelInput>
             </div>
 
+            {/* Delete toolbar */}
+            <div className="flex flex-wrap gap-2 items-center">
+              <Btn variant="secondary" onClick={() => { setSelectMode(!selectMode); setSelectedVisitorIds(new Set()); }}>
+                {selectMode ? (language === "ar" ? "✕ إلغاء التحديد" : "✕ Cancel") : (language === "ar" ? "☑️ تحديد متعدد" : "☑️ Select")}
+              </Btn>
+              {selectMode && (
+                <>
+                  <Btn variant="secondary" onClick={() => setSelectedVisitorIds(new Set(filteredV.map(v => v.id)))}>
+                    {language === "ar" ? "تحديد الكل" : "Select All"}
+                  </Btn>
+                  <Btn variant="danger" disabled={selectedVisitorIds.size === 0} onClick={() => {
+                    if (!confirm(language === "ar" ? `حذف ${selectedVisitorIds.size} زائر؟` : `Delete ${selectedVisitorIds.size} visitors?`)) return;
+                    selectedVisitorIds.forEach(id => void deleteVisitorRemote(id));
+                    setRemoteVisitors(prev => prev.filter(v => !selectedVisitorIds.has(v.id)));
+                    mutate(prev => ({ ...prev, visitors: prev.visitors.filter(v => !selectedVisitorIds.has(v.id)) }));
+                    showToast(language === "ar" ? `🗑 تم حذف ${selectedVisitorIds.size}` : `🗑 Deleted ${selectedVisitorIds.size}`, "success");
+                    setSelectedVisitorIds(new Set()); setSelectMode(false);
+                  }}>
+                    🗑 {language === "ar" ? `حذف المحدد (${selectedVisitorIds.size})` : `Delete (${selectedVisitorIds.size})`}
+                  </Btn>
+                </>
+              )}
+              {selectedDate && (
+                <Btn variant="danger" onClick={() => {
+                  const dayVisitors = mergedVisitors.filter(v => v.arrivalDate === selectedDate);
+                  if (dayVisitors.length === 0) return;
+                  if (!confirm(language === "ar" ? `حذف كل زوار يوم ${selectedDate} (${dayVisitors.length})؟` : `Delete all visitors on ${selectedDate} (${dayVisitors.length})?`)) return;
+                  dayVisitors.forEach(v => void deleteVisitorRemote(v.id));
+                  const ids = new Set(dayVisitors.map(v => v.id));
+                  setRemoteVisitors(prev => prev.filter(v => !ids.has(v.id)));
+                  mutate(prev => ({ ...prev, visitors: prev.visitors.filter(v => !ids.has(v.id)) }));
+                  showToast(language === "ar" ? `🗑 تم حذف زوار اليوم` : `🗑 Deleted day's visitors`, "success");
+                }}>
+                  🗑 {language === "ar" ? "حذف زوار هذا اليوم" : "Delete this day"}
+                </Btn>
+              )}
+              <Btn variant="danger" onClick={() => {
+                if (mergedVisitors.length === 0) return;
+                if (!confirm(language === "ar" ? `حذف جميع الزوار (${mergedVisitors.length})؟ لا يمكن التراجع.` : `Delete ALL visitors (${mergedVisitors.length})? Cannot undo.`)) return;
+                mergedVisitors.forEach(v => void deleteVisitorRemote(v.id));
+                setRemoteVisitors([]);
+                mutate(prev => ({ ...prev, visitors: [] }));
+                showToast(language === "ar" ? "🗑 تم حذف جميع الزوار" : "🗑 All visitors deleted", "success");
+              }}>
+                🗑 {language === "ar" ? "حذف الكل" : "Delete All"}
+              </Btn>
+            </div>
+
             {/* Bulk import modal */}
             {showBulkImport && (
               <Panel className="border-amber-400/30">
@@ -3315,7 +3365,19 @@ function AppContent({ tenantName }: { tenantName: string }) {
                 : filteredV.map(v => {
                   const isEditing = editingVisitorId === v.id;
                   return (
-                    <Panel key={v.id}>
+                    <Panel key={v.id} className={selectMode && selectedVisitorIds.has(v.id) ? "border-amber-400/50 bg-amber-500/5" : ""}>
+                      {selectMode && !isEditing && (
+                        <label className="flex items-center gap-2 mb-2 cursor-pointer">
+                          <input type="checkbox" checked={selectedVisitorIds.has(v.id)}
+                            onChange={e => {
+                              const next = new Set(selectedVisitorIds);
+                              e.target.checked ? next.add(v.id) : next.delete(v.id);
+                              setSelectedVisitorIds(next);
+                            }}
+                            className="h-5 w-5 rounded accent-amber-500" />
+                          <span className="text-xs text-slate-400">{language === "ar" ? "تحديد" : "Select"}</span>
+                        </label>
+                      )}
                       {isEditing ? (
                         <div className="space-y-3">
                           <div className="grid gap-3 sm:grid-cols-2">
