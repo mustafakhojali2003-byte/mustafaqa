@@ -427,6 +427,8 @@ function AppContent({ tenantName }: { tenantName: string }) {
   const [remoteEntryLogs, setRemoteEntryLogs] = useState<EntryLog[]>([]);
   const [entryLogForm, setEntryLogForm] = useState({ name: "", company: "", purpose: "", notes: "", type: "person" as EntryLog["type"], phone: "", idNumber: "", visitDate: new Date().toISOString().slice(0,10) });
   const [showEntryLogForm, setShowEntryLogForm] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
+  const [bulkText, setBulkText] = useState("");
   const [editingEntryLogId, setEditingEntryLogId] = useState<string | null>(null);
   const [activeVisitorTab, setActiveVisitorTab] = useState<"visitors"|"entrylog">("visitors");
   const [qrModalOpen, setQrModalOpen] = useState(false);
@@ -3334,10 +3336,70 @@ function AppContent({ tenantName }: { tenantName: string }) {
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <div className="text-sm text-slate-400">{language === "ar" ? "سجل الداخلين للمركز" : "Facility entry log"}</div>
-              <Btn onClick={() => { setEntryLogForm({ name: "", company: "", purpose: "", notes: "", type: "person", phone: "", idNumber: "", visitDate: new Date().toISOString().slice(0,10) }); setShowEntryLogForm(true); setEditingEntryLogId(null); }}>
-                + {language === "ar" ? "إضافة سجل" : "Add Entry"}
-              </Btn>
+              <div className="flex gap-2">
+                <Btn variant="secondary" onClick={() => { setBulkText(""); setShowBulkImport(true); }}>
+                  📋 {language === "ar" ? "استيراد قائمة" : "Import List"}
+                </Btn>
+                <Btn onClick={() => { setEntryLogForm({ name: "", company: "", purpose: "", notes: "", type: "person", phone: "", idNumber: "", visitDate: new Date().toISOString().slice(0,10) }); setShowEntryLogForm(true); setEditingEntryLogId(null); }}>
+                  + {language === "ar" ? "إضافة سجل" : "Add Entry"}
+                </Btn>
+              </div>
             </div>
+
+            {/* Bulk import modal */}
+            {showBulkImport && (
+              <Panel className="border-amber-400/30">
+                <div className="mb-2 font-bold text-amber-300">📋 {language === "ar" ? "استيراد قائمة أسماء" : "Import Name List"}</div>
+                <div className="mb-3 text-xs text-slate-400">
+                  {language === "ar"
+                    ? "ارفع ملفاً نصياً (.txt) أو الصق الأسماء — كل سطر اسم. الصيغة: الاسم - الجهة/المنصب (الجهة اختيارية)"
+                    : "Upload a text file (.txt) or paste names — one per line. Format: Name - Affiliation/Title (optional)"}
+                </div>
+                <input type="file" accept=".txt,.csv" onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (file) { const text = await file.text(); setBulkText(text); }
+                }} className="mb-3 block w-full text-sm text-slate-300 file:mr-3 file:rounded-xl file:border-0 file:bg-amber-500 file:px-4 file:py-2 file:text-sm file:font-bold file:text-black" />
+                <TxtArea rows={8} value={bulkText} onChange={e => setBulkText(e.target.value)}
+                  placeholder={language === "ar" ? "أو الصق الأسماء هنا...\nمثال:\nأحمد محمد - شركة النور\nسارة علي - وزارة الصحة" : "Or paste names here...\nExample:\nAhmed Mohammed - Al Noor Co\nSara Ali - Ministry of Health"} />
+                <div className="mt-2 text-xs text-slate-500">
+                  {(() => {
+                    const lines = bulkText.split("\n").map(l => l.trim()).filter(Boolean);
+                    return language === "ar" ? `${lines.length} اسم سيُضاف` : `${lines.length} names will be added`;
+                  })()}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Btn onClick={() => {
+                    const lines = bulkText.split("\n").map(l => l.trim()).filter(Boolean);
+                    if (lines.length === 0) { showToast(language === "ar" ? "لا توجد أسماء" : "No names found", "danger"); return; }
+                    const today = new Date().toISOString().slice(0, 10);
+                    const newEntries: EntryLog[] = lines.map((line, i) => {
+                      // Strip leading numbering like "1. " or "12) "
+                      const clean = line.replace(/^\s*\d+[.)-]\s*/, "");
+                      // Split name - affiliation on first " - " or " — "
+                      const parts = clean.split(/\s[-–—]\s/);
+                      const name = parts[0]?.trim() || clean;
+                      const company = parts.slice(1).join(" - ").trim();
+                      return {
+                        id: `el-${Date.now()}-${i}`,
+                        name, company, purpose: "", type: "person" as const,
+                        notes: "", phone: "", idNumber: "", visitDate: today,
+                        guardId: currentUser!.id, guardName: currentUser!.name,
+                        time: nowStamp(),
+                      };
+                    });
+                    newEntries.forEach(entry => void saveEntryLog(entry));
+                    setRemoteEntryLogs(prev => [...newEntries, ...prev]);
+                    showToast(language === "ar" ? `✅ تم إضافة ${newEntries.length} اسم` : `✅ Added ${newEntries.length} names`, "success");
+                    setShowBulkImport(false); setBulkText("");
+                  }}>
+                    ✅ {language === "ar" ? "استيراد الكل" : "Import All"}
+                  </Btn>
+                  <Btn variant="secondary" onClick={() => { setShowBulkImport(false); setBulkText(""); }}>
+                    {language === "ar" ? "إلغاء" : "Cancel"}
+                  </Btn>
+                </div>
+              </Panel>
+            )}
 
             {/* Add/Edit form */}
             {showEntryLogForm && (
