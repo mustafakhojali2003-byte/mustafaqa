@@ -391,7 +391,7 @@ function AppContent({ tenantName }: { tenantName: string }) {
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackType, setFeedbackType] = useState<"bug"|"suggestion"|"other">("bug");
   const [language, setLanguage] = useState<Language>(() => {
-    const saved = loadJson<Language>(LANGUAGE_KEY, "ar");
+    const saved = (window.localStorage.getItem(LANGUAGE_KEY) === "en" ? "en" : "ar") as Language;
     // Apply dir immediately on load
     document.documentElement.dir = saved === "ar" ? "rtl" : "ltr";
     document.documentElement.lang = saved;
